@@ -1,0 +1,20 @@
+{
+  "name": "3d-in-blueprints-local",
+  "interface": {
+    "displayName": "3d in Blueprints Local"
+  },
+  "plugins": [
+    {
+      "name": "blueprints-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/blueprints-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

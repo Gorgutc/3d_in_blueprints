@@ -1,0 +1,25 @@
+{
+  "name": "blueprints-codex",
+  "version": "0.1.0",
+  "description": "Repo-local Codex skills and guardrails for 3d_in_blueprints.",
+  "author": {
+    "name": "Gorgutc"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Blueprints Codex",
+    "shortDescription": "3d_in_blueprints Codex skills",
+    "longDescription": "Stack-neutral Codex plugin for 3d_in_blueprints bootstrap, orchestration, quality gates, and dormant Windows executable and Blender add-on profiles.",
+    "developerName": "Gorgutc",
+    "category": "Productivity",
+    "capabilities": ["Code", "Review", "Workflow"],
+    "defaultPrompt": [
+      "Use $blueprints-session-bootstrap before substantial 3d_in_blueprints work.",
+      "Use $blueprints-audit-orchestrator for broad audits, skills, hooks, agents, and instruction changes.",
+      "Use $blueprints-ship before final delivery.",
+      "Use $blueprints-windows-exe-profile only when the current request activates Windows executable planning.",
+      "Use $blueprints-blender-addon-profile only when the current request activates Blender add-on planning."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

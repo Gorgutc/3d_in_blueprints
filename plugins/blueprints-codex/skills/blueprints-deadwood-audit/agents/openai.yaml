@@ -1,0 +1,2 @@
+short_description: Deadwood and cleanup audit
+default_prompt: Use $blueprints-deadwood-audit for cleanup or duplicate infrastructure reviews.

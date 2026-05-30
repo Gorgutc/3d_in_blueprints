@@ -1,0 +1,11 @@
+pre-commit:
+  parallel: false
+  commands:
+    quality-fast:
+      run: npm run quality:fast
+
+pre-push:
+  parallel: false
+  commands:
+    codex-ship:
+      run: npm run codex:ship

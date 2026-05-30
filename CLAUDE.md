@@ -1,0 +1,6 @@
+# CLAUDE.md
+
+Use `AGENTS.md` as the source of truth for this repository.
+
+This file is a compatibility pointer only. Do not add separate Claude-specific
+policy here.

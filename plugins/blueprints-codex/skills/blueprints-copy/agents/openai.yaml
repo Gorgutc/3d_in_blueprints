@@ -1,0 +1,2 @@
+short_description: Copy and wording review
+default_prompt: Use $blueprints-copy for future user-facing text or docs copy.

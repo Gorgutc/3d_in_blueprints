@@ -1,0 +1,2 @@
+short_description: Final ship workflow
+default_prompt: Use $blueprints-ship before delivery, commit, push, or PR.

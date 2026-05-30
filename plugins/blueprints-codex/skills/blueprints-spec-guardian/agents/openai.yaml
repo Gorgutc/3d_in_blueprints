@@ -1,0 +1,2 @@
+short_description: Specification and contract guardian
+default_prompt: Use $blueprints-spec-guardian before accepting infrastructure contract changes.

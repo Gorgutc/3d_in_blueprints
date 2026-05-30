@@ -1,0 +1,2 @@
+short_description: Rendered visual review
+default_prompt: Use $blueprints-visual-review for screenshot or rendered visual review.

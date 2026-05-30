@@ -1,0 +1,20 @@
+{
+  "name": "3d-in-blueprints-codex-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stack-neutral Codex infrastructure for Gorgutc/3d_in_blueprints. This package is not the future app stack.",
+  "type": "module",
+  "scripts": {
+    "codex:verify-plugin": "node scripts/verify-codex-plugin.mjs",
+    "check:governance": "node scripts/check-governance.mjs",
+    "check:js": "node scripts/check-js-syntax.mjs",
+    "verify": "node scripts/verify-codex-infra.mjs",
+    "quality:fast": "npm run codex:verify-plugin && npm run check:governance && npm run check:js && npm run verify",
+    "quality:deep": "npm run quality:fast",
+    "codex:ship": "npm run quality:deep",
+    "hooks:install": "node scripts/install-hooks.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

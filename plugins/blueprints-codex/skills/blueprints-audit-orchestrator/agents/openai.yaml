@@ -1,0 +1,2 @@
+short_description: Multi-agent audit orchestration
+default_prompt: Use $blueprints-audit-orchestrator for broad Codex infrastructure work.
