@@ -1,0 +1,2 @@
+short_description: Asset and artifact rules
+default_prompt: Use $blueprints-assets for future assets, models, screenshots, or generated artifacts.

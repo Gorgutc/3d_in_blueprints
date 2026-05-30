@@ -1,0 +1,2 @@
+short_description: Future visual QA guard
+default_prompt: Use $blueprints-visual-qa when a task has UI or screenshot requirements.

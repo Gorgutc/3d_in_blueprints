@@ -1,0 +1,2 @@
+short_description: Five-second visual review
+default_prompt: Use $blueprints-run-5sec when a rendered first impression test is requested.

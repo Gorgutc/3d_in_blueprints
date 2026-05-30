@@ -1,0 +1,2 @@
+short_description: Instruction drift audit
+default_prompt: Use $blueprints-instruction-drift for docs, skills, hooks, or agent rewrites.

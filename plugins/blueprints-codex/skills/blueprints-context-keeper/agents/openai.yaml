@@ -1,0 +1,2 @@
+short_description: Narrow read-only context gathering
+default_prompt: Use $blueprints-context-keeper for focused repository context.

@@ -1,0 +1,2 @@
+short_description: Infrastructure reuse audit
+default_prompt: Use $blueprints-reuse-audit before adding new infrastructure patterns.

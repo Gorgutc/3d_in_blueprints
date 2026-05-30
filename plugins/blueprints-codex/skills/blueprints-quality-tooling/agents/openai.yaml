@@ -1,0 +1,2 @@
+short_description: Quality tooling review
+default_prompt: Use $blueprints-quality-tooling for scripts, hooks, CI, or validation changes.

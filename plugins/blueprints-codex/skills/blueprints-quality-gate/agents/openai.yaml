@@ -1,0 +1,2 @@
+short_description: Final quality gate
+default_prompt: Use $blueprints-quality-gate before final delivery.

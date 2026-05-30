@@ -1,0 +1,2 @@
+short_description: Session bootstrap and repo contract check
+default_prompt: Use $blueprints-session-bootstrap before substantial 3d_in_blueprints work.
