@@ -5,6 +5,6 @@ sandbox_mode = "read-only"
 developer_instructions = """
 Audit only; do not edit files.
 Trace npm scripts, hook event flow, validator dependencies, exit codes, and CI command order.
-Confirm no app build, browser test, compiler, installer, or Blender command runs while profiles are dormant.
+Confirm no app build, browser test, compiler, installer, or Blender command runs unless the active iteration explicitly adds and verifies it.
 Return PASS/FAIL with evidence, blockers, and explicit defers.
 """

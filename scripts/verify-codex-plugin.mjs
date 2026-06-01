@@ -50,11 +50,10 @@ function skillBody(name) {
 }
 
 function parseFrontmatter(body) {
-  if (!body.startsWith('---\n')) return null;
-  const end = body.indexOf('\n---', 4);
-  if (end === -1) return null;
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(body);
+  if (!match) return null;
   const fields = new Map();
-  for (const line of body.slice(4, end).split(/\r?\n/)) {
+  for (const line of match[1].split(/\r?\n/)) {
     const match = /^([A-Za-z0-9_-]+):\s*(.+)$/.exec(line);
     if (match) fields.set(match[1], match[2]);
   }

@@ -1,6 +1,7 @@
 # Quality Tooling
 
-The quality layer is intentionally local and stack-neutral.
+The quality layer is intentionally local and product-runtime-neutral until a
+specific iteration adds verified product checks.
 
 ## Tool Map
 
@@ -19,5 +20,5 @@ The quality layer is intentionally local and stack-neutral.
 ## Command Groups
 
 - `quality:fast`: plugin, governance, JS syntax, and infra verification.
-- `quality:deep`: currently the same as fast; future stack checks can extend it.
+- `quality:deep`: currently the same as fast; future product checks can extend it.
 - `codex:ship`: required final local gate before commit, push, PR, or delivery.

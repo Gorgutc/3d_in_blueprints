@@ -44,6 +44,7 @@ const activeFiles = [
   'GEMINI.md',
   'README.md',
   'DO_NOT_PUSH.md',
+  ...listFiles('.agents/plugins'),
   '.codex/config.toml',
   '.codex/hooks.json',
   ...listFiles('.codex/hooks'),
@@ -79,9 +80,10 @@ const codexConfig = read('.codex/config.toml');
 const windowsProfile = profileBlock(codexConfig, 'windows-exe');
 const blenderProfile = profileBlock(codexConfig, 'blender-addon');
 check('windows profile is dormant', /status\s*=\s*"dormant"/.test(windowsProfile) && /Profile id: `windows-exe`\./.test(read('docs/agent/profiles/windows-exe.md')));
-check('blender profile is dormant', /status\s*=\s*"dormant"/.test(blenderProfile) && /Profile id: `blender-addon`\./.test(read('docs/agent/profiles/blender-addon.md')));
-check('README keeps app stack unselected', /No application stack is selected yet\./.test(read('README.md')));
-check('package description rejects app stack lock', /not the future app stack/i.test(read('package.json')));
+check('blender profile is active', /status\s*=\s*"active"/.test(blenderProfile) && /Status: active\./.test(read('docs/agent/profiles/blender-addon.md')));
+check('project app stack is selected', /app_stack\s*=\s*"blender-addon-backend"/.test(codexConfig));
+check('README describes selected product scope', /Blender add-on \+ local standalone backend/.test(read('README.md')));
+check('package description rejects product runtime lock', /not the product runtime/i.test(read('package.json')));
 
 let failed = 0;
 for (const item of checks) {

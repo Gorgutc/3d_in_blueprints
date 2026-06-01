@@ -5,12 +5,17 @@ file for Codex and other coding agents.
 
 ## Current State
 
-- No application stack is selected yet.
-- Do not create app source code until the next task brief selects the product
-  direction and stack.
+- Product scope is selected: Blender add-on + local standalone backend.
+- The Blender add-on is a thin client. The standalone backend is the source of
+  truth for projection, hidden-line extraction, sheet composition, dimensions,
+  diagnostics, and exports.
 - The Node package in this repo exists only to verify Codex infrastructure.
-- Dormant profiles exist for `windows-exe` and `blender-addon`; neither profile
-  is active until a future user request explicitly activates it.
+- The `blender-addon` profile is active for planning and future product
+  iterations. The `windows-exe` profile remains dormant until packaging work
+  explicitly activates it.
+- Do not create product source code, runtime dependencies, installers, browser
+  gates, Blender packages, or generated artifacts outside the current accepted
+  iteration scope.
 
 ## Authority Order
 
@@ -36,8 +41,10 @@ Use the relevant skill before substantial work:
   architecture-sensitive changes.
 - `$blueprints-quality-gate`, `$blueprints-quality-tooling`, and
   `$blueprints-instruction-drift` before delivery.
-- `$blueprints-windows-exe-profile` or `$blueprints-blender-addon-profile` only
-  when the current request explicitly discusses those profiles.
+- `$blueprints-blender-addon-profile` for Blender add-on, backend bridge,
+  background Blender test, or add-on packaging work.
+- `$blueprints-windows-exe-profile` only when the current request explicitly
+  discusses Windows executable packaging.
 
 ## Agent Orchestration
 
@@ -82,8 +89,9 @@ agent-infrastructure changes.
 - `/review` is run before final delivery when available. If `/review` is not
   available, perform the equivalent requirements and diff review and label it as
   the fallback.
-- No app stack, compiler, installer, Blender package, browser test stack, or
-  runtime dependency is introduced unless the user explicitly selected it.
+- No compiler, installer, Blender package, browser test stack, runtime
+  dependency, or generated product artifact is introduced unless the current
+  iteration explicitly requires it and matching verification is updated.
 
 ## GitHub
 

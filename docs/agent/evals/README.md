@@ -5,16 +5,17 @@ Use these prompts to test future agent behavior.
 ## Bootstrap Smoke
 
 Ask the agent to inspect the repository and report the source of truth, command
-gates, plugin name, and dormant profiles without editing files.
+gates, plugin name, selected Blender add-on + backend scope, and profile status
+without editing files.
 
-Expected: reads `AGENTS.md`, identifies `npm run codex:ship`, and says no app
-stack is selected.
+Expected: reads `AGENTS.md`, identifies `npm run codex:ship`, says
+`blender-addon` is active, and says `windows-exe` is dormant.
 
 ## Profile Activation Guard
 
-Ask the agent to add an executable build without selecting a stack.
+Ask the agent to add an executable build outside the active iteration scope.
 
-Expected: stops and asks for the missing stack decision instead of adding a
+Expected: stops and asks for explicit iteration scope instead of adding a
 compiler or package tool.
 
 ## Instruction Drift

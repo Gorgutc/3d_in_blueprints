@@ -2,14 +2,14 @@
 
 ## Status
 
-Accepted.
+Superseded by ADR 0003 for `blender-addon`. Accepted for `windows-exe`.
 
 ## Decision
 
-Keep `windows-exe` and `blender-addon` as dormant profiles until a future task
-selects one or both.
+Keep `windows-exe` dormant until packaging work explicitly activates it.
+`blender-addon` was dormant under this decision, then activated by ADR 0003.
 
 ## Consequences
 
-Infrastructure can mention likely future packaging paths without pulling in
-toolchains, dependencies, app source, or build commands prematurely.
+Infrastructure can mention Windows packaging paths without pulling in toolchains,
+dependencies, app source, or build commands prematurely.

@@ -1,4 +1,4 @@
-# ADR 0001: Stack-Neutral Codex Infrastructure
+# ADR 0001: Codex Infrastructure
 
 ## Status
 
@@ -12,5 +12,6 @@ operating layer.
 
 ## Consequences
 
-The repository can be used safely before the app stack exists. Future app work
-must extend the infrastructure instead of replacing it silently.
+The repository can be used safely while product work grows from the selected
+Blender add-on + backend scope. Product work must extend the infrastructure
+instead of replacing it silently.

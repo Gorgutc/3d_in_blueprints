@@ -43,7 +43,7 @@ process.stdin.on('end', () => {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: '[3d_in_blueprints reminder] Read AGENTS.md, keep the app stack unselected unless the task selects it, use explicit spawned subagents for broad work, and run npm run codex:ship before delivery.'
+      additionalContext: '[3d_in_blueprints reminder] Read AGENTS.md, keep the selected Blender add-on + backend scope, use explicit spawned subagents for broad work, and run npm run codex:ship plus /review or the documented fallback before delivery.'
     }
   }));
 });

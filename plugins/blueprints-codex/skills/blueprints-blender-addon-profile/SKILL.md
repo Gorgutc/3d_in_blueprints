@@ -7,9 +7,10 @@ description: Use when a task discusses Blender add-ons, Blender Python, addon pa
 
 ## Overview
 
-The Blender add-on profile is dormant until explicitly activated.
+The Blender add-on profile is active for the selected product scope.
 
 ## Checks
 
-Before activation, require Blender version support, addon entrypoint, package
-layout, background test command, artifact policy, and user approval.
+Before product add-on code lands, require Blender version support, addon
+entrypoint, package layout, background test command, artifact policy, backend
+bridge contract, and iteration-scoped user approval.
