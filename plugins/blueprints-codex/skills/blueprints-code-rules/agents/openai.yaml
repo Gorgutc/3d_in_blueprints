@@ -1,2 +1,2 @@
 short_description: Code and script rules
-default_prompt: Use $blueprints-code-rules for scripts, hooks, validators, or future app code.
+default_prompt: Use $blueprints-code-rules for scripts, hooks, validators, or iteration-scoped product code.

@@ -8,8 +8,10 @@ max_depth = 1
 name = "3d_in_blueprints"
 repository = "Gorgutc/3d_in_blueprints"
 branch_prefix = "codex/"
-app_stack = "unselected"
+app_stack = "blender-addon-backend"
 tooling_runtime = "node-for-codex-infra-only"
+product_scope = "Blender add-on + local standalone backend"
+canonical_output = "svg"
 
 [workflow]
 verify_command = "npm run verify"
@@ -24,5 +26,5 @@ doc = "docs/agent/profiles/windows-exe.md"
 
 [[profiles]]
 name = "blender-addon"
-status = "dormant"
+status = "active"
 doc = "docs/agent/profiles/blender-addon.md"

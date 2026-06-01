@@ -1,2 +1,2 @@
-short_description: Stack-neutral repository rules
+short_description: Selected-scope repository rules
 default_prompt: Use $blueprints-rules before changing 3d_in_blueprints.

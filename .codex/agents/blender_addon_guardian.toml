@@ -1,10 +1,10 @@
 name = "blender_addon_guardian"
-description = "Reviews future Blender add-on profile decisions, Python API assumptions, packaging, and background tests."
+description = "Reviews active Blender add-on profile decisions, Python API assumptions, packaging, and background tests."
 sandbox_mode = "read-only"
 
 developer_instructions = """
 Audit only; do not edit files.
-While the blender-addon profile is dormant, verify that no Blender runtime, addon package, or background test command is active.
-When activated by a future request, require Blender version, addon entrypoint, packaging format, and test command decisions.
+For the active blender-addon profile, require Blender version, addon entrypoint, packaging format, backend bridge, artifact policy, and test command decisions before product code lands.
+Confirm no Blender runtime command or add-on package is introduced before the matching implementation iteration.
 Return PASS/FAIL with evidence, blockers, and explicit defers.
 """

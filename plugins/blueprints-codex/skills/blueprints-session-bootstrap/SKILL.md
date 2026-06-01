@@ -13,6 +13,6 @@ Load the current repository contract before acting.
 
 1. Read `AGENTS.md`.
 2. Check `git status --short --branch`.
-3. Confirm the app stack is still unselected unless the current request selects it.
+3. Confirm the selected scope remains Blender add-on + local standalone backend unless the current request changes it.
 4. For broad work, read `docs/agent/orchestration.md` and spawn applicable agents.
 5. Before delivery, run `npm run codex:ship` and `/review` or the fallback review.

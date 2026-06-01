@@ -1,2 +1,2 @@
 short_description: Frozen decision review
-default_prompt: Use $blueprints-frozen-decisions for dormant profile or command-gate changes.
+default_prompt: Use $blueprints-frozen-decisions for product-scope, profile-status, or command-gate changes.

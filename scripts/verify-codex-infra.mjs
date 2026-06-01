@@ -32,7 +32,9 @@ const requiredFiles = [
   'docs/agent/profiles/blender-addon.md',
   'docs/agent/adrs/0001-codex-infrastructure.md',
   'docs/agent/adrs/0002-dormant-product-profiles.md',
+  'docs/agent/adrs/0003-blender-addon-backend-activation.md',
   'docs/agent/evals/README.md',
+  'docs/handoff/ITERATION_LOG.md',
   '.github/workflows/codex-infra.yml',
   'lefthook.yml',
   'package.json',
@@ -109,6 +111,7 @@ for (const agent of requiredAgents) {
     check(`agent name matches file: ${agent}`, tomlField(body, 'name') === agent);
     check(`agent has description: ${agent}`, tomlField(body, 'description').length > 20);
     check(`agent has allowed sandbox_mode: ${agent}`, ['read-only', 'workspace-write'].includes(mode), mode);
+    check(`standard audit agent is read-only: ${agent}`, mode === 'read-only', mode);
     check(`agent has developer_instructions: ${agent}`, /developer_instructions\s*=/.test(body));
     check(`agent has read/write contract: ${agent}`, /do not edit files|Read-only|Do not modify files unless explicitly assigned/i.test(instructions));
     if (mode === 'workspace-write') {
@@ -120,7 +123,8 @@ for (const agent of requiredAgents) {
 
 if (exists('AGENTS.md')) {
   const agents = read('AGENTS.md');
-  check('AGENTS declares stack-neutral state', /No application stack is selected yet\./.test(agents));
+  check('AGENTS declares selected Blender backend scope', /Blender add-on \+ local standalone backend/.test(agents));
+  check('AGENTS keeps Node infrastructure-only', /Node package in this repo exists only to verify Codex infrastructure/.test(agents));
   check('AGENTS declares authority order', /current user request > AGENTS\.md > scripts\/verify-codex-infra\.mjs/.test(agents));
   check('AGENTS requires explicit spawned subagents', /explicit spawned subagents/.test(agents));
   check('AGENTS requires final review fallback', /\/review/.test(agents) && /fallback/.test(agents));
@@ -150,17 +154,20 @@ if (exists('.codex/hooks.json')) {
 
 if (exists('.codex/config.toml')) {
   const config = read('.codex/config.toml');
-  for (const profile of ['windows-exe', 'blender-addon']) {
-    const block = profileBlock(config, profile);
-    check(`profile block exists: ${profile}`, Boolean(block));
-    check(`profile is dormant: ${profile}`, /status\s*=\s*"dormant"/.test(block));
-  }
+  check('project app stack is selected', /app_stack\s*=\s*"blender-addon-backend"/.test(config));
+  const windowsProfile = profileBlock(config, 'windows-exe');
+  const blenderProfile = profileBlock(config, 'blender-addon');
+  check('profile block exists: windows-exe', Boolean(windowsProfile));
+  check('profile is dormant: windows-exe', /status\s*=\s*"dormant"/.test(windowsProfile));
+  check('profile block exists: blender-addon', Boolean(blenderProfile));
+  check('profile is active: blender-addon', /status\s*=\s*"active"/.test(blenderProfile));
 }
 
 if (exists('.github/workflows/codex-infra.yml')) {
   const workflow = read('.github/workflows/codex-infra.yml');
   check('CI runs npm ci', /npm ci/.test(workflow));
   check('CI runs codex ship', /npm run codex:ship/.test(workflow));
+  check('CI runs npm ci before codex ship', workflow.indexOf('npm ci') < workflow.indexOf('npm run codex:ship'));
 }
 
 if (exists('package.json')) {

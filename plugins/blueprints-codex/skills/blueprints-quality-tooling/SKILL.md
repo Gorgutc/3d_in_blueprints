@@ -7,10 +7,11 @@ description: Use when adding, reviewing, or fixing package scripts, validators, 
 
 ## Overview
 
-Keep checks deterministic, local, and stack-neutral.
+Keep checks deterministic, local, and free of unapproved product-runtime
+commands.
 
 ## Command Layers
 
 - `quality:fast`: plugin, governance, syntax, and infra checks.
-- `quality:deep`: reserved for future heavier checks.
+- `quality:deep`: reserved for future heavier product checks.
 - `codex:ship`: final gate before delivery.

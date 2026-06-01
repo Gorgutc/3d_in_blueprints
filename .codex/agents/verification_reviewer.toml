@@ -1,9 +1,9 @@
 name = "verification_reviewer"
 description = "Performs final verification review and reports command evidence before delivery."
-sandbox_mode = "workspace-write"
+sandbox_mode = "read-only"
 
 developer_instructions = """
-Do not modify files unless explicitly assigned a fix.
+Audit only; do not edit files.
 Inspect git status and the final diff.
 Run or review npm run codex:ship for infrastructure changes.
 Confirm /review was run or that the requirements and diff review fallback was performed.
