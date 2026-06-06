@@ -126,6 +126,33 @@ class BackendCliTests(unittest.TestCase):
                 json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
             )
 
+    def test_gost_non_a4_portrait_dimensions_returns_diagnostics_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "gost_job.json").read_text(encoding="utf-8"))
+            job["sheet"]["width_mm"] = 297
+            job["sheet"]["height_mm"] = 210
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                {
+                    "errors": [
+                        {
+                            "code": "invalid_sheet",
+                            "message": "GOST v1 supports A4 portrait sheets of 210x297 mm only.",
+                        }
+                    ],
+                    "outputs": {},
+                    "schema_version": "1.0",
+                    "status": "error",
+                    "warnings": [],
+                },
+                json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
+            )
+
     def test_unsupported_entity_is_reported_as_warning_and_skipped(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job_dir = Path(temp_dir)
@@ -207,6 +234,42 @@ class BackendCliTests(unittest.TestCase):
             )
             drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
             self.assertEqual([], drawing_ir["views"][0]["entities"])
+
+    def test_gost_job_writes_frame_title_block_and_view_layers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            shutil.copyfile(FIXTURES / "gost_job.json", job_dir / "job.json")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                (FIXTURES / "golden_gost_a4.svg").read_text(encoding="utf-8"),
+                (job_dir / "sheet.svg").read_text(encoding="utf-8"),
+            )
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual([], diagnostics["warnings"])
+
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual("GOST", drawing_ir["sheet"]["standard"])
+            self.assertEqual(
+                {
+                    "height_mm": 232,
+                    "width_mm": 185,
+                    "x_mm": 20,
+                    "y_mm": 5,
+                },
+                drawing_ir["sheet"]["drawing_area_mm"],
+            )
+            self.assertEqual(
+                ["frame", "hidden", "text", "thin", "visible"],
+                [layer["id"] for layer in drawing_ir["layers"]],
+            )
+            self.assertEqual(
+                ["gost-frame", "gost-title-block", "gost-title-row-1"],
+                [element["id"] for element in drawing_ir["sheet_elements"][:3]],
+            )
 
 
 def run_backend(job_dir):

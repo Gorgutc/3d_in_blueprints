@@ -11,9 +11,11 @@ specific iteration adds verified product checks.
   drift.
 - `scripts/check-js-syntax.mjs`: runs `node --check` on hook and script files.
 - `scripts/run-python-tests.mjs`: resolves a local Python interpreter and runs
-  stdlib `unittest` discovery for backend and bridge unit tests.
+  stdlib `unittest` discovery for backend, GOST composer, and bridge unit
+  tests.
 - `scripts/run-blender-smoke.mjs`: resolves Blender 5.1 and runs the I2 bridge
-  smoke test in background mode when invoked explicitly.
+  smoke test, including backend sheet composition, in background mode when
+  invoked explicitly.
 - `scripts/verify-codex-infra.mjs`: validates required docs, hooks, agents,
   CI, and authority contracts.
 - `lefthook.yml`: optional local pre-commit and pre-push quality gates.
@@ -30,7 +32,8 @@ of stale-total governance scanning.
 ## Command Groups
 
 - `quality:fast`: plugin, governance, JS syntax, and infra verification.
-- `test:backend`: Python stdlib tests for backend and bridge unit behavior.
-- `test:blender`: explicit Blender 5.1 background smoke for I2 bridge changes.
+- `test:backend`: Python stdlib tests for backend, GOST composer, and bridge
+  unit behavior.
+- `test:blender`: explicit Blender 5.1 background smoke for bridge changes.
 - `quality:deep`: `quality:fast` plus backend and bridge unit tests.
 - `codex:ship`: required final local gate before commit, push, PR, or delivery.

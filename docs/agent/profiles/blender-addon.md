@@ -97,10 +97,30 @@ execution, derived exports, or CAD projection logic.
 - artifact handling: smoke output is written to temporary job folders and must
   not be committed.
 
+## I3 GOST Composer Contract
+
+I3 adds backend-owned GOST v1 sheet composition without adding FreeCAD/TechDraw
+execution, CAD projection, dimensions, derived exports, or packaging.
+
+- activation: `job.json` requests GOST through `sheet.standard: "GOST"`;
+- supported sheet: A4 portrait only for v1;
+- DrawingIR: backend adds `sheet.standard`, `sheet.frame_mm`,
+  `sheet.title_block_mm`, `sheet.drawing_area_mm`, and `sheet_elements`;
+- GOST sheet elements: frame rectangle, title block rectangle, title block grid
+  lines, and text labels;
+- line layers: `frame`, `thin`, `text`, `visible`, and `hidden`;
+- Blender bridge behavior: the add-on may request GOST sheet metadata but must
+  not synthesize GOST geometry or drawing entities;
+- verification: backend stdlib tests include a GOST job fixture and golden SVG;
+- explicit defers: view projection rules beyond preserving view origin/scale,
+  dimensions, standards DB, image assist, DXF/PDF/DWG, and packaging remain
+  future iterations.
+
 ## Iteration Boundaries
 
 - I1 owns backend CLI, job schema, DrawingIR, deterministic SVG, and diagnostics.
 - I2 owns Blender bridge code and headless Blender smoke.
-- I3-I6 add GOST composition, dimensions, standards matching, and image assist.
+- I3 owns GOST v1 sheet composition.
+- I4-I6 add dimensions, standards matching, and image assist.
 - I7 owns add-on zip, backend bundle, CI matrix, version stamping, crash logs,
   release docs, and packaging smoke.

@@ -32,11 +32,12 @@ The gate checks:
 - iteration handoff log presence.
 - backend CLI, DrawingIR, SVG, and diagnostics behavior covered by Python
   stdlib `unittest` tests.
+- GOST v1 sheet composition covered by backend golden SVG tests.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
 
 `codex:ship` remains CI-safe and does not load Blender. The explicit
-`test:blender` command loads Blender 5.1 in background mode for I2 bridge
+`test:blender` command loads Blender 5.1 in background mode for bridge
 changes. The gates do not run a browser, compile an executable, package an
 add-on, build installers, invoke FreeCAD/TechDraw, or generate committed
 product artifacts until a product implementation iteration explicitly adds and

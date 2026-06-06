@@ -47,6 +47,9 @@ const requiredFiles = [
   'scripts/run-python-tests.mjs',
   'scripts/run-blender-smoke.mjs',
   'scripts/install-hooks.mjs',
+  'backend/src/blueprints_backend/gost.py',
+  'backend/tests/fixtures/gost_job.json',
+  'backend/tests/fixtures/golden_gost_a4.svg',
   'blender_addon/blueprints_addon/__init__.py',
   'blender_addon/blueprints_addon/bridge.py',
   'blender_addon/blueprints_addon/preview.py',
@@ -283,23 +286,34 @@ for (const script of [
 if (exists('docs/agent/profiles/blender-addon.md')) {
   const profile = read('docs/agent/profiles/blender-addon.md');
   check('profile records I2 Blender bridge contract', /## I2 Blender Bridge Contract/.test(profile));
+  check('profile records I3 GOST composer contract', /## I3 GOST Composer Contract/.test(profile));
   check('profile records SceneSnapshot schema', /SceneSnapshot JSON schema/.test(profile));
   check('profile keeps packaging deferred from I2', /packaging remains I7/.test(profile));
+  check('profile keeps projection deferred from I3', /CAD projection/.test(profile) && /future iterations/.test(profile));
 }
 
 if (exists('README.md')) {
   const readme = read('README.md');
   check('README describes I2 bridge slice', /I2 Blender Bridge/.test(readme));
+  check('README describes I3 GOST composer slice', /GOST I3 Composer/.test(readme));
   check('README lists Blender smoke command', /npm run test:blender/.test(readme));
   if (exists('docs/handoff/ITERATION_LOG.md')) {
     const handoff = read('docs/handoff/ITERATION_LOG.md');
     check('handoff records I2 bridge when README claims I2', !/I2 Blender Bridge/.test(readme) || /iteration_id:\s*I2-blender-bridge/.test(handoff));
+    check('handoff records I3 GOST composer when README claims I3', !/GOST I3 Composer/.test(readme) || /iteration_id:\s*I3-gost-composer/.test(handoff));
   }
 }
 
 if (exists('blender_addon/blueprints_addon/bridge.py')) {
   const bridge = read('blender_addon/blueprints_addon/bridge.py');
   check('Blender bridge does not synthesize drawing line entities', !/start_mm|end_mm|-bridge-line/.test(bridge));
+  check('Blender bridge requests GOST sheet composition', /"standard": "GOST"/.test(bridge));
+}
+
+if (exists('backend/src/blueprints_backend/gost.py')) {
+  const gost = read('backend/src/blueprints_backend/gost.py');
+  check('GOST composer defines A4 frame margin constants', /FRAME_LEFT_MM = 20/.test(gost) && /FRAME_TOP_MM = 5/.test(gost));
+  check('GOST composer avoids projection dependencies', !/FreeCAD|TechDraw|OCCT|subprocess/.test(gost));
 }
 
 let failed = 0;

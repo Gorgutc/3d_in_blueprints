@@ -547,3 +547,187 @@ repo_state: branch codex/i2-blender-bridge published as draft PR #4
 next_iteration_ready: false
 resume_prompt: Review PR #4 at https://github.com/Gorgutc/3d_in_blueprints/pull/4 and confirm CI. After PR #4 is merged into `main`, start I3 GOST Composer from updated `main`.
 ```
+
+```yaml
+iteration_id: I3-gost-composer
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Started from synced `main` after PR #4 was merged.
+  - Created branch `codex/i3-gost-composer`.
+  - Added backend-owned GOST v1 sheet composition behind
+    `sheet.standard: "GOST"`.
+  - Added A4 portrait frame margins, drawing area metadata, title block
+    metadata, title block grid lines, and title text as DrawingIR
+    `sheet_elements`.
+  - Added GOST line layers for `frame`, `thin`, `text`, `visible`, and
+    `hidden`.
+  - Kept the Blender add-on thin: it requests GOST sheet metadata in the
+    backend job payload but does not synthesize drawing entities.
+  - Added a GOST backend fixture and deterministic golden SVG coverage.
+  - Fixed review-found GOST validation gap so `standard: "GOST"` requires A4
+    portrait dimensions of 210x297 mm, not only `format: "A4"`.
+  - Updated README, Blender add-on profile docs, verification docs, quality
+    tooling docs, and infrastructure verification to include I3.
+files_changed:
+  - README.md
+  - backend/src/blueprints_backend/drawing_ir.py
+  - backend/src/blueprints_backend/gost.py
+  - backend/src/blueprints_backend/job.py
+  - backend/src/blueprints_backend/svg_writer.py
+  - backend/tests/fixtures/golden_gost_a4.svg
+  - backend/tests/fixtures/gost_job.json
+  - backend/tests/test_cli.py
+  - blender_addon/blueprints_addon/bridge.py
+  - blender_addon/tests/test_bridge_unit.py
+  - docs/agent/profiles/blender-addon.md
+  - docs/agent/quality-tooling.md
+  - docs/agent/verification.md
+  - docs/handoff/ITERATION_LOG.md
+  - scripts/verify-codex-infra.mjs
+commands_run:
+  - command: git switch -c codex/i3-gost-composer
+    result: PASS
+    evidence: Created I3 branch from clean synced `main`.
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED phase failed because the new GOST golden expected frame and
+      title block output before the composer existed.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: GREEN phase passed with 7 backend tests and 3 bridge unit tests
+      after adding GOST composition.
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED bridge phase failed with `KeyError: 'standard'` before the
+      bridge requested GOST sheet composition.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: Fresh run passed with 7 backend tests and 3 bridge unit tests.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Fresh smoke used Blender 5.1.2, exported OBJ, ran backend, and
+      quit cleanly.
+  - command: local fallback /review
+    result: FAIL
+    evidence: Code quality and verification reviewers found that GOST v1
+      accepted non-A4 portrait dimensions when `format` was `A4`.
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED regression confirmed landscape 297x210 GOST payload returned
+      success before validation was tightened.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: GREEN rerun passed with 8 backend tests and 3 bridge unit tests
+      after enforcing GOST A4 portrait dimensions.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Post-fix fresh smoke used Blender 5.1.2, exported OBJ, ran
+      backend, and quit cleanly.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: plugin 214/214, governance 750/750, JS 10/10, infra 233/233,
+      backend 8 tests OK, and bridge unit 3 tests OK.
+  - command: git diff --check
+    result: PASS
+    evidence: No whitespace errors; Git reported CRLF normalization warnings
+      only.
+  - command: generated artifact scan
+    result: PASS
+    evidence: No repo `__pycache__`, OBJ/GLB/GLTF, DXF/PDF/DWG, package,
+      installer, log, or temp artifacts found under backend or blender_addon.
+  - command: explicit subagent and fallback review
+    result: PASS
+    evidence: Code quality and verification reviewers first found the GOST
+      dimension-validation blocker, then passed after the RED/GREEN fix.
+      Blender, frozen-decision, instruction-drift, quality-tooling, deadwood,
+      reuse, runtime, tech-stack, and visual QA roles reported no blockers.
+      Codex-infra and Windows packaging roles timed out and were covered by
+      documented local fallback review with no blockers.
+artifacts_generated:
+  - backend/tests/fixtures/golden_gost_a4.svg
+acceptance_gates:
+  passed:
+    - GOST v1 is opt-in through `sheet.standard: "GOST"`.
+    - GOST v1 supports and validates A4 portrait sheet composition.
+    - DrawingIR includes sheet metadata and `sheet_elements` for the frame,
+      title block, grid, and title text.
+    - Deterministic SVG output matches the committed GOST golden fixture.
+    - Blender bridge remains source-only and requests backend sheet
+      composition.
+    - `codex:ship` passed with `0 FAIL`.
+    - No FreeCAD/TechDraw, OCCT, compiler, installer, package, or generated
+      release artifact was added.
+  failed: []
+accepted_deviations:
+  - GOST v1 uses a deliberately narrow frame/title block subset; detailed GOST
+    title block semantics remain deferred until later standards work.
+  - Two read-only review roles timed out after extended waits; matching
+    Codex-infra and Windows packaging fallback reviews were performed locally.
+explicit_defers:
+  - FreeCAD/TechDraw execution and CAD projection.
+  - I4 dimensions.
+  - I5 standards database and fastener matching.
+  - I6 image assist.
+  - I7 add-on zip, backend bundle, release docs, version stamping, crash logs,
+    CI matrix, and packaging smoke.
+  - DXF/PDF derived exports and DWG.
+blockers: []
+risks_or_regressions:
+  - Future projection work must avoid letting the bridge synthesize drawing
+    entities; backend remains the source of truth.
+  - Active Blender 5.2 beta processes existed during I2; I3 smoke explicitly
+    used Blender 5.1.2.
+repo_state: dirty working branch codex/i3-gost-composer; I3 implementation is
+  not staged, committed, pushed, or opened as a PR.
+next_iteration_ready: false
+resume_prompt: Finish I3 publication from `codex/i3-gost-composer`: run fresh
+  `npm.cmd run codex:ship`, complete `/review` or documented fallback review,
+  stage, commit, push, and open the I3 PR.
+```
+
+```yaml
+iteration_id: I3-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I3 implementation as `ed4c60e Add I3 GOST composer`.
+  - Pushed `codex/i3-gost-composer` to origin.
+  - Opened draft PR #5 for I3.
+  - Preserved I3 defers for projection, dimensions, standards, exports, image
+    assist, and packaging.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I3 GOST composer"
+    result: PASS
+    evidence: Created commit `ed4c60e`; pre-commit `quality:fast` passed.
+  - command: git push -u origin codex/i3-gost-composer
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 750/750, JS 10/10, infra 233/233, backend 8 tests
+      OK, and bridge unit 3 tests OK.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/5
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I3 implementation is committed and pushed for review.
+    - Draft PR #5 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+explicit_defers:
+  - Check remote CI for PR #5.
+  - Review and merge PR #5 before starting I4 Dimensions v1.
+  - I4-I7 product iterations remain pending.
+blockers: []
+risks_or_regressions:
+  - Active Blender 5.2 beta processes were present during I2; I3 local smoke
+    used Blender 5.1.2 explicitly.
+repo_state: branch codex/i3-gost-composer published as draft PR #5
+next_iteration_ready: false
+resume_prompt: Review PR #5 at https://github.com/Gorgutc/3d_in_blueprints/pull/5 and confirm CI. After PR #5 is merged into `main`, start I4 Dimensions v1 from updated `main`.
+```
