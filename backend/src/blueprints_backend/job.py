@@ -46,9 +46,11 @@ def validate_job(payload, job_dir=None):
             validate_view(view)
         validate_unique_view_ids(views)
         validate_standards(payload.get("standards"))
+        validate_image_assist(payload.get("image_assist"))
         return
 
     validate_scene_source(payload.get("source"), job_dir)
+    validate_image_assist(payload.get("image_assist"))
 
 
 def validate_scene_source(source, job_dir):
@@ -156,6 +158,93 @@ def validate_standards(standards_payload):
     for request in fastener_matches:
         validate_fastener_match(request)
     validate_unique_standard_match_ids(fastener_matches)
+
+
+def validate_image_assist(image_assist_payload):
+    if image_assist_payload is None:
+        return
+
+    require(isinstance(image_assist_payload, dict), "invalid_image_assist", "image_assist must be an object when provided.")
+    require(image_assist_payload.get("mode") == "assistive", "invalid_image_assist", "image_assist.mode must be assistive in I6.")
+
+    scale = image_assist_payload.get("scale", {"kind": "relative"})
+    require(isinstance(scale, dict), "invalid_image_assist", "image_assist.scale must be an object when provided.")
+    if "kind" in scale:
+        require(scale["kind"] == "relative", "invalid_image_assist", "image_assist.scale.kind must be relative in I6.")
+    if "reference_mm_per_unit" in scale:
+        require(
+            is_number(scale["reference_mm_per_unit"]) and scale["reference_mm_per_unit"] > 0,
+            "invalid_image_assist",
+            "image_assist.scale.reference_mm_per_unit must be positive when provided.",
+        )
+
+    overlays = image_assist_payload.get("overlays")
+    require(isinstance(overlays, list), "invalid_image_assist", "image_assist.overlays must be an array.")
+    for overlay in overlays:
+        validate_image_assist_overlay(overlay, scale)
+    validate_unique_image_assist_overlay_ids(overlays)
+
+
+def validate_image_assist_overlay(overlay, scale):
+    require(isinstance(overlay, dict), "invalid_image_assist", "Each image_assist overlay must be an object.")
+    require(isinstance(overlay.get("id"), str) and overlay["id"], "invalid_image_assist", "image_assist overlay id is required.")
+    require(isinstance(overlay.get("type"), str) and overlay["type"], "invalid_image_assist", "image_assist overlay type is required.")
+
+    if overlay["type"] not in {"contour", "primitive_hint", "relative_dimension"}:
+        return
+
+    if overlay["type"] == "contour":
+        if contains_absolute_coordinates(overlay) and not has_absolute_scale(scale):
+            raise JobError("invalid_image_assist", "image_assist overlay absolute coordinates require scale.reference_mm_per_unit.")
+        points = overlay.get("points_rel")
+        require(
+            isinstance(points, list) and len(points) >= 2 and all(is_pair(point) for point in points),
+            "invalid_image_assist",
+            "contour.points_rel must contain at least two relative point arrays.",
+        )
+    elif overlay["type"] == "primitive_hint":
+        require(isinstance(overlay.get("primitive"), str) and overlay["primitive"], "invalid_image_assist", "primitive_hint.primitive is required.")
+        if overlay["primitive"] != "circle":
+            return
+        if contains_absolute_coordinates(overlay) and not has_absolute_scale(scale):
+            raise JobError("invalid_image_assist", "image_assist overlay absolute coordinates require scale.reference_mm_per_unit.")
+        if overlay["primitive"] == "circle":
+            require(is_pair(overlay.get("center_rel")), "invalid_image_assist", "primitive_hint.center_rel must be a two-number array.")
+            require(
+                is_number(overlay.get("radius_rel")) and overlay["radius_rel"] > 0,
+                "invalid_image_assist",
+                "primitive_hint.radius_rel must be positive.",
+            )
+    elif overlay["type"] == "relative_dimension":
+        if contains_absolute_coordinates(overlay) and not has_absolute_scale(scale):
+            raise JobError("invalid_image_assist", "image_assist overlay absolute coordinates require scale.reference_mm_per_unit.")
+        require(is_pair(overlay.get("start_rel")), "invalid_image_assist", "relative_dimension.start_rel must be a two-number array.")
+        require(is_pair(overlay.get("end_rel")), "invalid_image_assist", "relative_dimension.end_rel must be a two-number array.")
+        if "label" in overlay:
+            require(isinstance(overlay["label"], str) and overlay["label"], "invalid_image_assist", "relative_dimension.label must be a non-empty string when provided.")
+
+
+def validate_unique_image_assist_overlay_ids(overlays):
+    overlay_ids = [overlay["id"] for overlay in overlays]
+    require(len(overlay_ids) == len(set(overlay_ids)), "invalid_image_assist", "image_assist overlay id values must be unique.")
+
+
+def contains_absolute_coordinates(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key.endswith("_mm"):
+                return True
+            if key == "units" and item == "mm":
+                return True
+            if contains_absolute_coordinates(item):
+                return True
+    elif isinstance(value, list):
+        return any(contains_absolute_coordinates(item) for item in value)
+    return False
+
+
+def has_absolute_scale(scale):
+    return is_number(scale.get("reference_mm_per_unit")) and scale["reference_mm_per_unit"] > 0
 
 
 def validate_fastener_match(request):

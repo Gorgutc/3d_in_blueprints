@@ -38,6 +38,9 @@ The gate checks:
 - Standards DB v1 fastener matching covered by backend fixture tests for
   source/license metadata, unsupported-family warnings, unmatched-diameter
   warnings, and unchanged SVG output.
+- Image Assist v1 covered by backend fixture tests for relative overlay SVG
+  output, diagnostics output registration, unsupported overlay warnings, and
+  rejection of absolute overlay coordinates without explicit scale.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
 

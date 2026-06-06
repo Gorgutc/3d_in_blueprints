@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "job_id": "image-assist-bracket",
+  "sheet": {
+    "format": "A4",
+    "width_mm": 210,
+    "height_mm": 297
+  },
+  "views": [
+    {
+      "id": "front",
+      "label": "Front",
+      "origin_mm": [20, 30],
+      "scale": 1,
+      "entities": [
+        {
+          "id": "edge-left",
+          "type": "line",
+          "layer": "visible",
+          "start_mm": [0, 0],
+          "end_mm": [50, 0]
+        },
+        {
+          "id": "edge-right",
+          "type": "line",
+          "layer": "hidden",
+          "start_mm": [50, 0],
+          "end_mm": [50, 30]
+        }
+      ]
+    }
+  ],
+  "image_assist": {
+    "mode": "assistive",
+    "scale": {
+      "kind": "relative"
+    },
+    "overlays": [
+      {
+        "id": "outer-contour",
+        "type": "contour",
+        "points_rel": [[0.1, 0.2], [0.85, 0.2], [0.85, 0.7], [0.1, 0.7], [0.1, 0.2]]
+      },
+      {
+        "id": "hole-circle-hint",
+        "type": "primitive_hint",
+        "primitive": "circle",
+        "center_rel": [0.48, 0.45],
+        "radius_rel": 0.08
+      },
+      {
+        "id": "width-ratio",
+        "type": "relative_dimension",
+        "start_rel": [0.1, 0.78],
+        "end_rel": [0.85, 0.78],
+        "label": "1.00 rel"
+      }
+    ]
+  }
+}

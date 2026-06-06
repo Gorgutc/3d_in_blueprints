@@ -168,6 +168,38 @@ exports, or packaging.
   automatic fastener detection, BOM generation, image assist, DXF/PDF/DWG, and
   packaging remain future iterations.
 
+## I6 Image Assist Contract
+
+I6 adds backend-owned assistive image overlays without adding automatic
+computer-vision measurement, CAD projection, derived exports, or packaging.
+
+- activation: `job.json` may provide `image_assist` with `mode: "assistive"`;
+- scope: assist overlays are hints only and must not be promoted to exact
+  engineering geometry without later projection/scale work;
+- supported overlay types: `contour`, `primitive_hint`, and
+  `relative_dimension`;
+- supported primitive hints: circle candidates through relative center and
+  radius fields;
+- units: I6 DrawingIR image assist records use `units: "relative"`;
+- SVG: backend writes deterministic `assist_overlay.svg` and lists it in
+  diagnostics as `image_assist_overlay`;
+- Blender bridge behavior: the add-on does not synthesize, interpret, or
+  visually merge assist geometry in I6; future preview work may load the extra
+  backend output generically and must run `npm run test:blender`;
+- artifact handling: generated `assist_overlay.svg` job outputs must not be
+  committed outside explicit golden fixtures;
+- validation: absolute `*_mm` overlay coordinates require an explicit
+  `scale.reference_mm_per_unit`; without that scale the backend returns an
+  `invalid_image_assist` diagnostics error;
+- diagnostics: unsupported overlay or primitive types are skipped and reported
+  with warnings while valid assist overlays continue to render;
+- dependencies: I6 remains stdlib-only and must not add PIL, OpenCV, NumPy,
+  scikit-image, FreeCAD/TechDraw, OCCT, or subprocess-driven image/CAD
+  runtimes;
+- explicit defers: automatic scale calibration, absolute dimensions from
+  images, image classification, edge detection, template matching, CAD
+  projection, DXF/PDF/DWG, and packaging remain future iterations.
+
 ## Iteration Boundaries
 
 - I1 owns backend CLI, job schema, DrawingIR, deterministic SVG, and diagnostics.
@@ -175,6 +207,6 @@ exports, or packaging.
 - I3 owns GOST v1 sheet composition.
 - I4 owns basic explicit dimensions.
 - I5 owns standards DB and fastener matching.
-- I6 owns image assist.
+- I6 owns assistive relative image overlays.
 - I7 owns add-on zip, backend bundle, CI matrix, version stamping, crash logs,
   release docs, and packaging smoke.

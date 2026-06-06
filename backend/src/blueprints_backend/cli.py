@@ -4,6 +4,7 @@ from pathlib import Path
 
 from . import diagnostics
 from . import drawing_ir
+from . import image_assist
 from . import svg_writer
 from .job import JobError, load_job
 
@@ -22,7 +23,16 @@ def main(argv=None):
         ir, warnings = drawing_ir.build(job)
         write_json(job_dir / "drawing_ir.json", ir)
         (job_dir / "sheet.svg").write_text(svg_writer.render(ir), encoding="utf-8")
-        diagnostics.write(diagnostics_path, diagnostics.ok(warnings, ir.get("standards") if job.get("standards") else None))
+        if ir.get("image_assist"):
+            (job_dir / "assist_overlay.svg").write_text(image_assist.render_overlay(ir), encoding="utf-8")
+        diagnostics.write(
+            diagnostics_path,
+            diagnostics.ok(
+                warnings,
+                ir.get("standards") if job.get("standards") else None,
+                image_assist=bool(ir.get("image_assist")),
+            ),
+        )
         return 0
     except JobError as exc:
         return write_error(diagnostics_path, exc.code, exc.message)

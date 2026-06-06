@@ -8,6 +8,8 @@ Do not commit or push:
   screenshots unless a future task explicitly asks for committed evidence.
 - generated installers, unsigned executables, Blender export zips, build
   outputs, vendored binaries, or generated package artifacts.
+- generated backend job outputs such as `drawing_ir.json`, `sheet.svg`,
+  `assist_overlay.svg`, and `diagnostics.json` outside committed test fixtures.
 - downloaded references from external storage unless the user explicitly asks
   for that export and provenance is documented.
 

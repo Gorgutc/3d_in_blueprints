@@ -10,9 +10,8 @@ technical drawings from 3D scene data.
 - Dormant profile: `windows-exe`, until packaging work explicitly activates it.
 - Implemented slices: I1 backend CLI + DrawingIR + deterministic SVG +
   diagnostics; I2 Blender Bridge thin-client smoke; I3 GOST Composer v1;
-  I4 Dimensions v1; I5 Standards DB v1.
-- Not implemented yet: FreeCAD/TechDraw execution, image assist, packaging,
-  DXF/PDF, DWG.
+  I4 Dimensions v1; I5 Standards DB v1; I6 Image Assist v1.
+- Not implemented yet: FreeCAD/TechDraw execution, packaging, DXF/PDF, DWG.
 
 ## Backend I1 Contract
 
@@ -111,6 +110,29 @@ The starter data is project-authored, non-normative metadata for matcher
 plumbing; no third-party standards table is copied. I5 does not add exact
 standards geometry, automatic fastener detection, BOM generation, image assist,
 packaging, FreeCAD/TechDraw execution, or derived DXF/PDF/DWG exports.
+
+## Image Assist I6 V1
+
+The backend now supports explicit assistive image overlays through
+`image_assist` in `job.json`.
+
+I6 provides:
+
+- assistive mode only, with no automatic absolute measurement inference;
+- relative contour overlays through `contour.points_rel`;
+- relative primitive hints for circle candidates;
+- relative dimension hints through `relative_dimension` overlays;
+- a deterministic `assist_overlay.svg` output listed in diagnostics as
+  `image_assist_overlay`;
+- DrawingIR `image_assist` records using relative units;
+- validation that rejects absolute `*_mm` overlay coordinates unless
+  `scale.reference_mm_per_unit` is explicitly provided;
+- diagnostics warnings for unsupported overlay or primitive types, which are
+  skipped while valid assist overlays still render.
+
+I6 is stdlib-only and does not add computer-vision dependencies, image
+classification, automatic scale calibration, FreeCAD/TechDraw execution,
+packaging, or derived DXF/PDF/DWG exports.
 
 ## Verification
 
