@@ -316,3 +316,50 @@ repo_state: dirty working branch codex/i1-backend-cli-drawingir; I1 is not
 next_iteration_ready: false
 resume_prompt: First publish I1 from `codex/i1-backend-cli-drawingir`: run a fresh `npm.cmd run codex:ship`, perform `/review` or documented fallback review, stage, commit, push, and open the I1 PR. After that PR is merged, start I2 Blender Bridge.
 ```
+
+```yaml
+iteration_id: I1-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Published I1 Backend CLI + DrawingIR as a draft pull request.
+  - Confirmed the published branch is `codex/i1-backend-cli-drawingir`.
+  - Recorded PR URL and the next continuation point after publication.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I1 backend CLI and DrawingIR"
+    result: PASS
+    evidence: Created commit `1b0182f`.
+  - command: git push -u origin codex/i1-backend-cli-drawingir
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` completed with backend
+      tests OK.
+  - command: gh pr create --draft --base main --head codex/i1-backend-cli-drawingir
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/3
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I1 is committed and pushed for review.
+    - Draft PR targets `main`.
+    - README and handoff are aligned with I1 scope and I2-I7 defers.
+  failed: []
+accepted_deviations:
+  - One tech-stack subagent timed out during pre-PR review; the matching
+    read-only stack audit was performed locally and found no runtime
+    dependencies, compilers, installers, Blender packages, browser gates, or
+    generated release artifacts.
+explicit_defers:
+  - Merge PR #3 before starting I2.
+  - Check remote CI for PR #3.
+  - I2 Blender Bridge and background Blender 5.1 process ownership check.
+  - I3-I7 product iterations.
+blockers: []
+risks_or_regressions:
+  - Direct Python probes outside `scripts/run-python-tests.mjs` can recreate
+    ignored `__pycache__`; check before future staging.
+repo_state: branch codex/i1-backend-cli-drawingir published as draft PR #3
+next_iteration_ready: false
+resume_prompt: Review and merge PR #3 at https://github.com/Gorgutc/3d_in_blueprints/pull/3. After PR #3 is merged into `main`, start I2 Blender Bridge from updated `main` and first check the existing background Blender 5.1 process ownership.
+```
