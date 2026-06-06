@@ -58,6 +58,9 @@ const activeFiles = [
   'lefthook.yml',
   '.github/workflows/codex-infra.yml',
 ].filter(exists).sort((a, b) => a.localeCompare(b));
+const historicalFiles = [
+  'docs/handoff/ITERATION_LOG.md',
+].filter(exists);
 
 const stalePassTotals = /\b(?:56\/56|119\/119|32\/32|\d+\/\d+\s+PASS)\b/i;
 const staleProjectRules = [
@@ -86,6 +89,12 @@ check('blender profile is active', /status\s*=\s*"active"/.test(blenderProfile) 
 check('project app stack is selected', /app_stack\s*=\s*"blender-addon-backend"/.test(codexConfig));
 check('README describes selected product scope', /Blender add-on \+ local standalone backend/.test(read('README.md')));
 check('package description rejects product runtime lock', /not the product runtime/i.test(read('package.json')));
+check(
+  'handoff log is historical, not active governance policy',
+  historicalFiles.includes('docs/handoff/ITERATION_LOG.md')
+    && !activeFiles.includes('docs/handoff/ITERATION_LOG.md')
+    && /historical handoff ledger/.test(read('docs/agent/quality-tooling.md'))
+);
 
 let failed = 0;
 for (const item of checks) {

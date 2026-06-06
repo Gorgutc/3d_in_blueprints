@@ -8,3 +8,8 @@ coverage/
 # Local reports and generated artifacts
 reports/
 test-results/
+blueprints-job-*/
+*.blend
+*.obj
+*.glb
+*.gltf

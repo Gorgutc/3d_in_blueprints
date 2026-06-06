@@ -74,6 +74,7 @@ npm run codex:verify-plugin
 npm run check:governance
 npm run check:js
 npm run test:backend
+npm run test:blender
 npm run verify
 npm run quality:fast
 npm run quality:deep
@@ -81,7 +82,8 @@ npm run codex:ship
 ```
 
 `npm run codex:ship` is mandatory before commit, push, PR, or final delivery of
-agent-infrastructure or product changes.
+agent-infrastructure or product changes. `npm run test:blender` is required for
+Blender add-on bridge changes when Blender 5.1 is available locally.
 
 ## Done When
 

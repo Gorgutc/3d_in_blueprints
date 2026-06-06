@@ -1,7 +1,7 @@
 # Verification
 
-This repository verifies Codex infrastructure plus the active I1 backend test
-slice.
+This repository verifies Codex infrastructure plus the active backend and
+Blender bridge test slices.
 
 ## Commands
 
@@ -10,6 +10,7 @@ npm run codex:verify-plugin
 npm run check:governance
 npm run check:js
 npm run test:backend
+npm run test:blender
 npm run verify
 npm run quality:fast
 npm run quality:deep
@@ -31,8 +32,12 @@ The gate checks:
 - iteration handoff log presence.
 - backend CLI, DrawingIR, SVG, and diagnostics behavior covered by Python
   stdlib `unittest` tests.
+- Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
+  is available locally or `BLENDER_EXE` points to Blender 5.1.
 
-The gate does not run a browser, compile an executable, load Blender, package
-an add-on, build installers, invoke FreeCAD/TechDraw, or generate committed
+`codex:ship` remains CI-safe and does not load Blender. The explicit
+`test:blender` command loads Blender 5.1 in background mode for I2 bridge
+changes. The gates do not run a browser, compile an executable, package an
+add-on, build installers, invoke FreeCAD/TechDraw, or generate committed
 product artifacts until a product implementation iteration explicitly adds and
 verifies that behavior.

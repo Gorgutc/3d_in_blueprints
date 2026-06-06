@@ -45,7 +45,13 @@ const requiredFiles = [
   'scripts/check-js-syntax.mjs',
   'scripts/verify-codex-infra.mjs',
   'scripts/run-python-tests.mjs',
+  'scripts/run-blender-smoke.mjs',
   'scripts/install-hooks.mjs',
+  'blender_addon/blueprints_addon/__init__.py',
+  'blender_addon/blueprints_addon/bridge.py',
+  'blender_addon/blueprints_addon/preview.py',
+  'blender_addon/tests/test_bridge_unit.py',
+  'blender_addon/tests/smoke_blender_bridge.py',
 ];
 
 const requiredAgents = [
@@ -184,6 +190,7 @@ if (exists('package.json')) {
     'check:governance',
     'check:js',
     'test:backend',
+    'test:blender',
     'verify',
     'quality:fast',
     'quality:deep',
@@ -193,8 +200,20 @@ if (exists('package.json')) {
     check(`package exposes ${command}`, packageJson.includes(`"${command}"`));
   }
   check('test:backend runs Python test runner', scripts['test:backend'] === 'node scripts/run-python-tests.mjs');
+  check('test:blender runs Blender smoke runner', scripts['test:blender'] === 'node scripts/run-blender-smoke.mjs');
   check('quality:deep runs fast gate before backend tests', /npm run quality:fast/.test(scripts['quality:deep'] || '') && /npm run test:backend/.test(scripts['quality:deep'] || ''));
   check('codex:ship runs quality:deep', scripts['codex:ship'] === 'npm run quality:deep');
+}
+
+if (exists('scripts/run-python-tests.mjs')) {
+  const pythonRunner = read('scripts/run-python-tests.mjs');
+  check('Python test runner includes Blender bridge unit tests', /blender_addon\/tests/.test(pythonRunner));
+}
+
+if (exists('.gitignore')) {
+  const gitignore = read('.gitignore');
+  check('gitignore blocks bridge job folders', /blueprints-job-\*\//.test(gitignore));
+  check('gitignore blocks bridge OBJ GLB outputs', /\*\.obj/.test(gitignore) && /\*\.glb/.test(gitignore) && /\*\.gltf/.test(gitignore));
 }
 
 if (exists('scripts/install-hooks.mjs')) {
@@ -212,6 +231,7 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
   const hookPath = path.join(root, '.codex/hooks/post-tool-verify.js');
   const infraSample = JSON.stringify({ tool_input: { file_path: 'docs\\\\agent\\\\verification.md' } });
   const backendSample = JSON.stringify({ tool_input: { file_path: 'backend\\\\src\\\\blueprints_backend\\\\cli.py' } });
+  const blenderSample = JSON.stringify({ tool_input: { file_path: 'blender_addon\\\\blueprints_addon\\\\bridge.py' } });
   const nonInfraSample = JSON.stringify({ tool_input: { file_path: 'src\\\\app.js' } });
   const hookEnv = { ...process.env, CODEX_INFRA_POST_TOOL_DRY_RUN: '1' };
   const infraResult = spawnSync(process.execPath, [hookPath], {
@@ -226,6 +246,12 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
     encoding: 'utf8',
     env: hookEnv,
   });
+  const blenderResult = spawnSync(process.execPath, [hookPath], {
+    cwd: root,
+    input: blenderSample,
+    encoding: 'utf8',
+    env: hookEnv,
+  });
   const nonInfraResult = spawnSync(process.execPath, [hookPath], {
     cwd: root,
     input: nonInfraSample,
@@ -234,6 +260,7 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
   });
   check('post-tool hook detects escaped Windows infra paths', infraResult.status === 0 && /would run/.test(infraResult.stdout));
   check('post-tool hook detects escaped Windows backend paths', backendResult.status === 0 && /would run/.test(backendResult.stdout));
+  check('post-tool hook detects escaped Windows Blender add-on paths', blenderResult.status === 0 && /would run/.test(blenderResult.stdout));
   check('post-tool hook ignores escaped Windows non-infra paths', nonInfraResult.status === 0 && nonInfraResult.stdout === '');
   check('post-tool hook runs quality deep on Windows', /npm\.cmd run quality:deep/.test(hookBody));
   check('post-tool hook runs quality deep on POSIX', /'quality:deep'/.test(hookBody));
@@ -245,11 +272,34 @@ for (const script of [
   'scripts/check-js-syntax.mjs',
   'scripts/verify-codex-infra.mjs',
   'scripts/run-python-tests.mjs',
+  'scripts/run-blender-smoke.mjs',
   'scripts/install-hooks.mjs',
 ]) {
   if (exists(script)) {
     check(`${script} resolves repo root from script path`, /fileURLToPath\(import\.meta\.url\)/.test(read(script)));
   }
+}
+
+if (exists('docs/agent/profiles/blender-addon.md')) {
+  const profile = read('docs/agent/profiles/blender-addon.md');
+  check('profile records I2 Blender bridge contract', /## I2 Blender Bridge Contract/.test(profile));
+  check('profile records SceneSnapshot schema', /SceneSnapshot JSON schema/.test(profile));
+  check('profile keeps packaging deferred from I2', /packaging remains I7/.test(profile));
+}
+
+if (exists('README.md')) {
+  const readme = read('README.md');
+  check('README describes I2 bridge slice', /I2 Blender Bridge/.test(readme));
+  check('README lists Blender smoke command', /npm run test:blender/.test(readme));
+  if (exists('docs/handoff/ITERATION_LOG.md')) {
+    const handoff = read('docs/handoff/ITERATION_LOG.md');
+    check('handoff records I2 bridge when README claims I2', !/I2 Blender Bridge/.test(readme) || /iteration_id:\s*I2-blender-bridge/.test(handoff));
+  }
+}
+
+if (exists('blender_addon/blueprints_addon/bridge.py')) {
+  const bridge = read('blender_addon/blueprints_addon/bridge.py');
+  check('Blender bridge does not synthesize drawing line entities', !/start_mm|end_mm|-bridge-line/.test(bridge));
 }
 
 let failed = 0;

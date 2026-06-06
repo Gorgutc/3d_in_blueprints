@@ -363,3 +363,187 @@ repo_state: branch codex/i1-backend-cli-drawingir published as draft PR #3
 next_iteration_ready: false
 resume_prompt: Review and merge PR #3 at https://github.com/Gorgutc/3d_in_blueprints/pull/3. After PR #3 is merged into `main`, start I2 Blender Bridge from updated `main` and first check the existing background Blender 5.1 process ownership.
 ```
+
+```yaml
+iteration_id: I2-blender-bridge
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Started from updated `main` after PR #3 was merged.
+  - Created branch `codex/i2-blender-bridge`.
+  - Checked running Blender processes before I2 smoke work; active processes
+    were Blender 5.2 beta, not Blender 5.1.
+  - Added Blender add-on package `blender_addon/blueprints_addon`.
+  - Added Blender 5.1 `bl_info`, preferences, generate operator, sidebar
+    panel, and deterministic register/unregister contract.
+  - Added SceneSnapshot JSON export for visible scene objects.
+  - Added OBJ/GLB scene asset export into a temporary backend job folder.
+  - Added backend subprocess bridge using `<python> -m blueprints_backend
+    <job-folder>` with local `backend/src` on `PYTHONPATH`.
+  - Kept the add-on as a thin client: backend jobs contain SceneSnapshot and
+    asset references only, not synthesized drawing entities.
+  - Added backend-side placeholder DrawingIR generation for SceneSnapshot jobs
+    with a `projection_pending` warning until CAD projection lands.
+  - Added bridge diagnostics for backend spawn failures, invalid/missing
+    diagnostics, and missing required backend outputs.
+  - Added diagnostics/SVG preview import into Blender Text data-blocks.
+  - Added explicit local Blender smoke command `npm.cmd run test:blender`.
+  - Added stdlib bridge unit tests that run without `bpy`.
+  - Updated generated artifact ignore rules for bridge job folders and exported
+    OBJ/GLB/GLTF assets.
+  - Documented that the handoff log is historical evidence rather than an
+    active governance policy source.
+  - Updated README, profile docs, verification docs, quality tooling docs,
+    package scripts, PostToolUse detection, and infra verification for I2.
+files_changed:
+  - .gitignore
+  - blender_addon/blueprints_addon/__init__.py
+  - blender_addon/blueprints_addon/bridge.py
+  - blender_addon/blueprints_addon/preview.py
+  - blender_addon/tests/smoke_blender_bridge.py
+  - blender_addon/tests/test_bridge_unit.py
+  - backend/src/blueprints_backend/drawing_ir.py
+  - backend/src/blueprints_backend/job.py
+  - backend/tests/test_cli.py
+  - scripts/run-python-tests.mjs
+  - scripts/run-blender-smoke.mjs
+  - scripts/check-governance.mjs
+  - scripts/verify-codex-infra.mjs
+  - .codex/hooks/post-tool-verify.js
+  - package.json
+  - plugins/blueprints-codex/skills/blueprints-quality-tooling/SKILL.md
+  - AGENTS.md
+  - README.md
+  - docs/agent/profiles/blender-addon.md
+  - docs/agent/quality-tooling.md
+  - docs/agent/verification.md
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git pull --ff-only origin main
+    result: PASS
+    evidence: Local `main` was already up to date after PR #3 merge.
+  - command: git switch -c codex/i2-blender-bridge
+    result: PASS
+    evidence: Created I2 branch.
+  - command: Blender process inventory
+    result: PASS
+    evidence: Found active Blender 5.2 beta processes; Blender 5.1 install is
+      available separately.
+  - command: npm.cmd run check:js
+    result: PASS
+    evidence: 10/10 JavaScript syntax checks passed.
+  - command: npm.cmd run verify
+    result: PASS
+    evidence: 223/223 infrastructure checks passed.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: 6 backend stdlib tests and 3 bridge unit tests passed.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Final rerun after drift fixes used Blender 5.1.2, exported OBJ,
+      ran backend, loaded diagnostics/SVG preview Text data-blocks, and quit
+      cleanly.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: plugin 214/214, governance 750/750, JS 10/10, infra 223/223,
+      backend 6 tests OK, bridge unit 3 tests OK.
+  - command: git diff --check
+    result: PASS
+    evidence: No whitespace errors; Git reported CRLF normalization warnings
+      only.
+  - command: generated artifact scan
+    result: PASS
+    evidence: No repo `__pycache__`, OBJ/GLB/GLTF, package, installer,
+      DXF/PDF/DWG, log, or temp artifacts found.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - Add-on entrypoint and `bl_info` for Blender 5.1 exist.
+    - SceneSnapshot JSON and OBJ/GLB export contract exists.
+    - Backend subprocess uses the I1 job-folder CLI contract.
+    - Add-on job payload stays source-only; backend owns placeholder drawing
+      synthesis and emits a `projection_pending` warning.
+    - Spawn failures, invalid/missing diagnostics, and missing required outputs
+      are converted into diagnostics instead of crashing the Blender operator.
+    - Diagnostics and SVG preview are loaded into Blender Text data-blocks.
+    - Headless Blender 5.1 smoke passes locally.
+    - No `__pycache__`, OBJ/GLB, package, installer, DXF/PDF/DWG, or release
+      artifacts remain in the repo after smoke.
+  failed: []
+accepted_deviations:
+  - `test:blender` is explicit and local; it is not part of `codex:ship` so CI
+    remains Blender-runtime-neutral.
+  - PostToolUse detects `blender_addon/` edits but runs `quality:deep`; final
+    I2 delivery also ran `test:blender` explicitly.
+  - Earlier instruction-drift, deadwood, and code-quality agent FAIL findings
+    were fixed in this branch.
+  - Some required reviewer roles hit the thread/subagent availability limit;
+    missing roles must be covered by explicit local fallback review before
+    final delivery.
+  - `docs/handoff/ITERATION_LOG.md` is a historical handoff ledger, not an
+    active governance policy source; it can preserve command evidence counts.
+explicit_defers:
+  - Add-on zip, backend bundle, version stamping, release docs, and packaging
+    smoke remain I7.
+  - FreeCAD/TechDraw execution and CAD projection remain deferred.
+  - GOST composition, dimensions, standards DB, image assist, DXF/PDF, and DWG
+    remain deferred.
+  - Visual drawing preview beyond Text data-block import remains deferred.
+blockers: []
+risks_or_regressions:
+  - Active Blender 5.2 beta processes were present during I2; smoke explicitly
+    used Blender 5.1.2, but future tests should keep checking process state.
+  - Blender may create Python `__pycache__`; `scripts/run-blender-smoke.mjs`
+    now cleans cache under `backend` and `blender_addon` after smoke.
+repo_state: dirty working branch codex/i2-blender-bridge; I2 implementation is
+  not staged, committed, pushed, or opened as a PR.
+next_iteration_ready: false
+resume_prompt: Continue I2 publication from `codex/i2-blender-bridge` by committing the verified implementation, pushing the branch, and opening the I2 PR. Rerun `npm.cmd run test:blender` and `npm.cmd run codex:ship` if the diff changes before publication.
+```
+
+```yaml
+iteration_id: I2-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I2 implementation as `332fea9 Add I2 Blender bridge`.
+  - Pushed `codex/i2-blender-bridge` to origin.
+  - Opened draft PR #4 for I2.
+  - Preserved I2 defers for projection, standards, exports, image assist, and
+    packaging.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I2 Blender bridge"
+    result: PASS
+    evidence: Created commit `332fea9`; pre-commit quality gate passed.
+  - command: git push -u origin codex/i2-blender-bridge
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 750/750, JS 10/10, infra 223/223, backend 6 tests
+      OK, and bridge unit 3 tests OK.
+  - command: gh pr create --draft --base main --head codex/i2-blender-bridge
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/4
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I2 implementation is committed and pushed for review.
+    - Draft PR #4 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+  - `test:blender` remains a local explicit smoke outside CI `codex:ship`.
+explicit_defers:
+  - Check remote CI for PR #4.
+  - Review and merge PR #4 before starting I3 GOST Composer.
+  - I3-I7 product iterations remain pending.
+blockers: []
+risks_or_regressions:
+  - Active Blender 5.2 beta processes were present during I2; local smoke used
+    Blender 5.1.2 explicitly.
+repo_state: branch codex/i2-blender-bridge published as draft PR #4
+next_iteration_ready: false
+resume_prompt: Review PR #4 at https://github.com/Gorgutc/3d_in_blueprints/pull/4 and confirm CI. After PR #4 is merged into `main`, start I3 GOST Composer from updated `main`.
+```
