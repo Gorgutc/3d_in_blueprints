@@ -884,3 +884,51 @@ resume_prompt: Finish I4 publication from `codex/i4-dimensions-v1`: run fresh
   `npm.cmd run codex:ship`, complete `/review` or documented fallback review,
   stage, commit, push, and open the I4 PR.
 ```
+
+```yaml
+iteration_id: I4-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I4 implementation as `4227be6 Add I4 dimensions v1`.
+  - Pushed `codex/i4-dimensions-v1` to origin.
+  - Opened draft PR #6 for I4.
+  - Preserved I4 defers for projection-derived dimensions, angular/ordinate
+    dimensions, tolerances, detailed GOST rules, standards, image assist,
+    exports, and packaging.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I4 dimensions v1"
+    result: PASS
+    evidence: Created commit `4227be6`; pre-commit `quality:fast` passed with
+      plugin 214/214, governance 750/750, JS 10/10, and infra 254/254.
+  - command: git push -u origin codex/i4-dimensions-v1
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 750/750, JS 10/10, infra 254/254, backend 12 tests
+      OK, and bridge unit 3 tests OK.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/6
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I4 implementation is committed and pushed for review.
+    - Draft PR #6 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+explicit_defers:
+  - Check remote CI for PR #6.
+  - Review and merge PR #6 before starting I5 Standards DB.
+  - I5-I7 product iterations remain pending.
+blockers: []
+risks_or_regressions:
+  - SVG dimension placement still uses fixed offsets and no collision avoidance;
+    future broader dimension-layout work needs rendered evidence before PASS.
+repo_state: branch codex/i4-dimensions-v1 published as draft PR #6
+next_iteration_ready: false
+resume_prompt: Review PR #6 at https://github.com/Gorgutc/3d_in_blueprints/pull/6 and confirm CI. After PR #6 is merged into `main`, start I5 Standards DB from updated `main`.
+```
