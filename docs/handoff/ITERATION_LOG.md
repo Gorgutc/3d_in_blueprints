@@ -1410,3 +1410,51 @@ resume_prompt: Finish I7 publication from `codex/i7-packaging-hardening`: run a
   fresh `npm.cmd run codex:ship`, complete `/review` or documented fallback
   review, stage, commit, push, and open the I7 PR.
 ```
+
+```yaml
+iteration_id: I7-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I7 implementation as `0e115b5 Add I7 packaging hardening`.
+  - Pushed `codex/i7-packaging-hardening` to origin.
+  - Opened draft PR #9 for I7.
+  - Preserved I7 defers for Windows executable packaging, installers, signing,
+    FreeCAD/TechDraw, OCCT/C++, DXF/PDF/DWG, and committed release artifacts.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I7 packaging hardening"
+    result: PASS
+    evidence: Created commit `0e115b5`; pre-commit `quality:fast` passed with
+      plugin 214/214, governance 774/774, JS 11/11, and infra 327/327.
+  - command: git push -u origin codex/i7-packaging-hardening
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 774/774, JS 11/11, infra 327/327, backend 25 tests
+      OK, bridge unit 3 tests OK, and packaging smoke PASS.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/9
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I7 implementation is committed and pushed for review.
+    - Draft PR #9 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+explicit_defers:
+  - Check remote CI for PR #9.
+  - Review and merge PR #9 before starting the next product iteration.
+blockers: []
+risks_or_regressions:
+  - Generated release artifacts remain local-only until a future distribution
+    task defines signing, installer, and publishing policy.
+repo_state: branch codex/i7-packaging-hardening published as draft PR #9
+next_iteration_ready: false
+resume_prompt: Review PR #9 at https://github.com/Gorgutc/3d_in_blueprints/pull/9
+  and confirm CI. After PR #9 is merged into `main`, continue from updated
+  `main` with the next approved iteration.
+```
