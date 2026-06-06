@@ -500,3 +500,50 @@ repo_state: dirty working branch codex/i2-blender-bridge; I2 implementation is
 next_iteration_ready: false
 resume_prompt: Continue I2 publication from `codex/i2-blender-bridge` by committing the verified implementation, pushing the branch, and opening the I2 PR. Rerun `npm.cmd run test:blender` and `npm.cmd run codex:ship` if the diff changes before publication.
 ```
+
+```yaml
+iteration_id: I2-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I2 implementation as `332fea9 Add I2 Blender bridge`.
+  - Pushed `codex/i2-blender-bridge` to origin.
+  - Opened draft PR #4 for I2.
+  - Preserved I2 defers for projection, standards, exports, image assist, and
+    packaging.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I2 Blender bridge"
+    result: PASS
+    evidence: Created commit `332fea9`; pre-commit quality gate passed.
+  - command: git push -u origin codex/i2-blender-bridge
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 750/750, JS 10/10, infra 223/223, backend 6 tests
+      OK, and bridge unit 3 tests OK.
+  - command: gh pr create --draft --base main --head codex/i2-blender-bridge
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/4
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I2 implementation is committed and pushed for review.
+    - Draft PR #4 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+  - `test:blender` remains a local explicit smoke outside CI `codex:ship`.
+explicit_defers:
+  - Check remote CI for PR #4.
+  - Review and merge PR #4 before starting I3 GOST Composer.
+  - I3-I7 product iterations remain pending.
+blockers: []
+risks_or_regressions:
+  - Active Blender 5.2 beta processes were present during I2; local smoke used
+    Blender 5.1.2 explicitly.
+repo_state: branch codex/i2-blender-bridge published as draft PR #4
+next_iteration_ready: false
+resume_prompt: Review PR #4 at https://github.com/Gorgutc/3d_in_blueprints/pull/4 and confirm CI. After PR #4 is merged into `main`, start I3 GOST Composer from updated `main`.
+```
