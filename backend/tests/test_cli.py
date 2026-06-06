@@ -163,6 +163,51 @@ class BackendCliTests(unittest.TestCase):
                 for entity in drawing_ir["views"][0]["entities"]
             ])
 
+    def test_scene_snapshot_job_without_views_returns_placeholder_warning(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            (job_dir / "scene_snapshot.json").write_text(
+                json.dumps({"schema_version": "1.0", "objects": []}),
+                encoding="utf-8",
+            )
+            (job_dir / "scene.obj").write_text("# smoke asset\n", encoding="utf-8")
+            (job_dir / "job.json").write_text(
+                json.dumps({
+                    "job_id": "scene-bridge",
+                    "schema_version": "1.0",
+                    "sheet": {
+                        "format": "A4",
+                        "height_mm": 297,
+                        "width_mm": 210,
+                    },
+                    "source": {
+                        "assets": {
+                            "scene": "scene.obj",
+                        },
+                        "scene_snapshot": "scene_snapshot.json",
+                    },
+                }),
+                encoding="utf-8",
+            )
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual(
+                [
+                    {
+                        "code": "projection_pending",
+                        "message": "SceneSnapshot projection is not implemented in I2; backend emitted an empty placeholder view.",
+                        "source": "scene_snapshot.json",
+                    }
+                ],
+                diagnostics["warnings"],
+            )
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual([], drawing_ir["views"][0]["entities"])
+
 
 def run_backend(job_dir):
     env = os.environ.copy()

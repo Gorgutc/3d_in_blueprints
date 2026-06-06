@@ -13,6 +13,7 @@ commands.
 ## Command Layers
 
 - `quality:fast`: plugin, governance, syntax, and infra checks.
-- `test:backend`: Python stdlib backend tests for the active I1 product slice.
-- `quality:deep`: `quality:fast` plus backend product tests.
+- `test:backend`: Python stdlib tests for backend and bridge unit behavior.
+- `test:blender`: explicit Blender 5.1 background smoke for I2 bridge changes.
+- `quality:deep`: `quality:fast` plus backend and bridge unit tests.
 - `codex:ship`: final gate before delivery.

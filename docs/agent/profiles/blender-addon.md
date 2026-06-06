@@ -37,7 +37,8 @@ Before product add-on code lands, the implementation iteration must define:
 - backend subprocess command, job folder layout, timeout, and error handling;
 - SVG/diagnostics preview behavior;
 - background Blender smoke command;
-- packaging and release zip format;
+- packaging and release zip format activation, or an explicit deferral to the
+  packaging iteration;
 - add-on preferences and asset paths;
 - artifact handling in `DO_NOT_PUSH.md`.
 
@@ -62,6 +63,39 @@ I1 resolves this backend bridge contract:
 The Blender add-on entrypoint, add-on package layout, `bl_info`,
 registration/unregistration contract, background Blender smoke command, and
 release zip format remain I2/I7 decisions and must stay out of I1.
+
+## I2 Blender Bridge Contract
+
+I2 adds the thin Blender client bridge without adding packaging, FreeCAD
+execution, derived exports, or CAD projection logic.
+
+- add-on package layout: `blender_addon/blueprints_addon`;
+- add-on entrypoint: `blender_addon/blueprints_addon/__init__.py`;
+- `bl_info`: owned by the add-on entrypoint, with Blender baseline `(5, 1, 0)`;
+- registration contract: `BLUEPRINTS_AddonPreferences`,
+  `BLUEPRINTS_OT_generate`, and `BLUEPRINTS_PT_panel` are registered and
+  unregistered in deterministic order;
+- SceneSnapshot JSON schema: `schema_version`, scene name, unit settings, and
+  visible object records with type, transforms, dimensions, location, and
+  bounding boxes;
+- asset export contract: the bridge writes `scene_snapshot.json` plus either
+  `scene.obj` or `scene.glb` into the job folder;
+- backend job input: the add-on writes SceneSnapshot and asset references only;
+  backend projection remains responsible for drawing/view synthesis;
+- backend subprocess command: `<backend_python> -m blueprints_backend
+  <job-folder>` with `PYTHONPATH` pointing at `backend/src` in local
+  development;
+- timeout owner: the Blender bridge enforces `timeout_seconds` and writes a
+  backend timeout diagnostic if the subprocess exceeds it;
+- preview behavior: `diagnostics.json` and `sheet.svg` are loaded into Blender
+  Text data-blocks named `Blueprints Diagnostics` and `Blueprints SVG Preview`;
+- background smoke command: `npm run test:blender`, which locates Blender 5.1
+  or uses `BLENDER_EXE`;
+- add-on preferences: backend Python path, backend source path, job root,
+  export format, and timeout seconds;
+- packaging remains I7 and no release zip format is activated in I2;
+- artifact handling: smoke output is written to temporary job folders and must
+  not be committed.
 
 ## Iteration Boundaries
 

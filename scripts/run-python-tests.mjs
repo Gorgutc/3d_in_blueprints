@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, '..');
 const backendSrc = path.join(root, 'backend', 'src');
+const blenderAddonSrc = path.join(root, 'blender_addon');
 
 const candidates = [
   fromEnv(),
@@ -25,26 +26,31 @@ if (!selected) {
 const env = {
   ...process.env,
   PYTHONDONTWRITEBYTECODE: '1',
-  PYTHONPATH: prependPath(backendSrc, process.env.PYTHONPATH || ''),
+  PYTHONPATH: prependPaths([backendSrc, blenderAddonSrc], process.env.PYTHONPATH || ''),
 };
 
-const result = spawnSync(selected.command, [
-  ...selected.args,
-  '-m',
-  'unittest',
-  'discover',
-  '-s',
-  'backend/tests',
-  '-p',
-  'test_*.py',
-], {
-  cwd: root,
-  env,
-  stdio: 'inherit',
-  windowsHide: true,
-});
+const suites = ['backend/tests', 'blender_addon/tests'];
+let failed = false;
+for (const suite of suites) {
+  const result = spawnSync(selected.command, [
+    ...selected.args,
+    '-m',
+    'unittest',
+    'discover',
+    '-s',
+    suite,
+    '-p',
+    'test_*.py',
+  ], {
+    cwd: root,
+    env,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  if (result.status !== 0) failed = true;
+}
 
-process.exitCode = result.status ?? 1;
+process.exitCode = failed ? 1 : 0;
 
 function fromEnv() {
   const command = process.env.PYTHON;
@@ -75,7 +81,9 @@ function canRunPython(candidate) {
   return result.status === 0;
 }
 
-function prependPath(entry, existing) {
-  if (!existing) return entry;
-  return `${entry}${path.delimiter}${existing}`;
+function prependPaths(entries, existing) {
+  const prefix = entries.filter(Boolean).join(path.delimiter);
+  if (!prefix) return existing;
+  if (!existing) return prefix;
+  return `${prefix}${path.delimiter}${existing}`;
 }

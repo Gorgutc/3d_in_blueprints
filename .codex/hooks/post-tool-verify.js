@@ -29,6 +29,7 @@ process.stdin.on('end', () => {
     /plugins\/blueprints-codex\//,
     /docs\/agent\//,
     /backend\//,
+    /blender_addon\//,
     /scripts\/.*\.(?:js|mjs|cjs)/,
     /package(?:-lock)?\.json/,
     /lefthook\.yml/,

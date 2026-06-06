@@ -1,5 +1,6 @@
 import json
 import math
+from pathlib import PurePath
 
 
 class JobError(ValueError):
@@ -20,11 +21,11 @@ def load_job(path):
     except ValueError as exc:
         raise JobError("invalid_json", str(exc)) from exc
 
-    validate_job(payload)
+    validate_job(payload, path.parent)
     return payload
 
 
-def validate_job(payload):
+def validate_job(payload, job_dir=None):
     require(isinstance(payload, dict), "invalid_job", "job.json must be a JSON object.")
     require(payload.get("schema_version") == "1.0", "invalid_schema", "job.json schema_version must be 1.0.")
     require(isinstance(payload.get("job_id"), str) and payload["job_id"], "invalid_job", "job_id is required.")
@@ -35,10 +36,29 @@ def validate_job(payload):
     require(is_number(sheet.get("height_mm")) and sheet["height_mm"] > 0, "invalid_sheet", "sheet.height_mm must be positive.")
     require(isinstance(sheet.get("format"), str) and sheet["format"], "invalid_sheet", "sheet.format is required.")
 
-    views = payload.get("views")
-    require(isinstance(views, list) and views, "invalid_views", "views must contain at least one view.")
-    for view in views:
-        validate_view(view)
+    if "views" in payload:
+        views = payload.get("views")
+        require(isinstance(views, list) and views, "invalid_views", "views must contain at least one view.")
+        for view in views:
+            validate_view(view)
+        return
+
+    validate_scene_source(payload.get("source"), job_dir)
+
+
+def validate_scene_source(source, job_dir):
+    require(isinstance(source, dict), "invalid_source", "source is required when views are omitted.")
+    scene_snapshot = source.get("scene_snapshot")
+    require(is_repo_relative_path(scene_snapshot), "invalid_source", "source.scene_snapshot must be a relative file path.")
+
+    assets = source.get("assets")
+    require(isinstance(assets, dict), "invalid_source", "source.assets is required.")
+    scene_asset = assets.get("scene")
+    require(is_repo_relative_path(scene_asset), "invalid_source", "source.assets.scene must be a relative file path.")
+
+    if job_dir is not None:
+        require((job_dir / scene_snapshot).exists(), "missing_source", f"{scene_snapshot} was not found in the job folder.")
+        require((job_dir / scene_asset).exists(), "missing_source", f"{scene_asset} was not found in the job folder.")
 
 
 def validate_view(view):
@@ -78,6 +98,13 @@ def is_pair(value):
 
 def is_number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def is_repo_relative_path(value):
+    if not isinstance(value, str) or not value:
+        return False
+    path = PurePath(value)
+    return not path.is_absolute() and ".." not in path.parts
 
 
 def reject_json_constant(value):

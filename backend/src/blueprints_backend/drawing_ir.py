@@ -12,6 +12,9 @@ LAYER_STYLES = {
 
 
 def build(job):
+    if "views" not in job:
+        return build_scene_placeholder(job)
+
     layer_ids = sorted({
         entity["layer"]
         for view in job["views"]
@@ -56,9 +59,38 @@ def build(job):
     }, warnings
 
 
+def build_scene_placeholder(job):
+    return {
+        "layers": [],
+        "schema_version": "1.0",
+        "sheet": {
+            "format": job["sheet"]["format"],
+            "height_mm": job["sheet"]["height_mm"],
+            "width_mm": job["sheet"]["width_mm"],
+        },
+        "source_job_id": job["job_id"],
+        "units": "mm",
+        "views": [
+            {
+                "entities": [],
+                "id": "front",
+                "label": "Front",
+                "origin_mm": [20, 20],
+                "scale": 1,
+            }
+        ],
+    }, [
+        {
+            "code": "projection_pending",
+            "message": "SceneSnapshot projection is not implemented in I2; backend emitted an empty placeholder view.",
+            "source": job["source"]["scene_snapshot"],
+        }
+    ]
+
+
 def unsupported_entity_warnings(job):
     warnings = []
-    for view in job["views"]:
+    for view in job.get("views", []):
         for entity in view["entities"]:
             if entity["type"] == "line":
                 continue
