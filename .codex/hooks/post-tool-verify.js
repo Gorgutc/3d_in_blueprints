@@ -28,6 +28,7 @@ process.stdin.on('end', () => {
     /\.agents\//,
     /plugins\/blueprints-codex\//,
     /docs\/agent\//,
+    /backend\//,
     /scripts\/.*\.(?:js|mjs|cjs)/,
     /package(?:-lock)?\.json/,
     /lefthook\.yml/,
@@ -37,13 +38,13 @@ process.stdin.on('end', () => {
   if (!infraChanged) return;
 
   if (process.env.CODEX_INFRA_POST_TOOL_DRY_RUN === '1') {
-    process.stdout.write('Codex infrastructure verification would run.\n');
+    process.stdout.write('Codex quality:deep verification would run.\n');
     return;
   }
 
-  const result = runVerify();
+  const result = runQualityDeep();
   if (result.status !== 0) {
-    process.stderr.write('Codex infrastructure verification failed after an infrastructure edit.\n');
+    process.stderr.write('Codex quality:deep verification failed after a relevant edit.\n');
     process.exit(2);
   }
 });
@@ -52,16 +53,16 @@ function normalizePayload(source) {
   return source.replace(/\\+/g, '/');
 }
 
-function runVerify() {
+function runQualityDeep() {
   if (process.platform === 'win32') {
-    return spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm.cmd run verify'], {
+    return spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm.cmd run quality:deep'], {
       cwd: root,
       stdio: 'inherit',
       windowsHide: true
     });
   }
 
-  return spawnSync('npm', ['run', 'verify'], {
+  return spawnSync('npm', ['run', 'quality:deep'], {
     cwd: root,
     stdio: 'inherit'
   });

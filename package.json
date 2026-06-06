@@ -8,9 +8,10 @@
     "codex:verify-plugin": "node scripts/verify-codex-plugin.mjs",
     "check:governance": "node scripts/check-governance.mjs",
     "check:js": "node scripts/check-js-syntax.mjs",
+    "test:backend": "node scripts/run-python-tests.mjs",
     "verify": "node scripts/verify-codex-infra.mjs",
     "quality:fast": "npm run codex:verify-plugin && npm run check:governance && npm run check:js && npm run verify",
-    "quality:deep": "npm run quality:fast",
+    "quality:deep": "npm run quality:fast && npm run test:backend",
     "codex:ship": "npm run quality:deep",
     "hooks:install": "node scripts/install-hooks.mjs"
   },

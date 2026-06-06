@@ -1,0 +1,10 @@
+# Python cache and test byproducts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+coverage/
+
+# Local reports and generated artifacts
+reports/
+test-results/

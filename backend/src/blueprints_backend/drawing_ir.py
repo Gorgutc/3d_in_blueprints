@@ -1,0 +1,78 @@
+LAYER_STYLES = {
+    "hidden": {
+        "stroke": "#111111",
+        "stroke_dasharray": "3 2",
+        "stroke_width": 0.25,
+    },
+    "visible": {
+        "stroke": "#111111",
+        "stroke_width": 0.35,
+    },
+}
+
+
+def build(job):
+    layer_ids = sorted({
+        entity["layer"]
+        for view in job["views"]
+        for entity in view["entities"]
+        if entity["type"] == "line"
+    })
+    warnings = unsupported_entity_warnings(job)
+
+    return {
+        "layers": [
+            {"id": layer_id, **LAYER_STYLES.get(layer_id, default_style())}
+            for layer_id in layer_ids
+        ],
+        "schema_version": "1.0",
+        "sheet": {
+            "format": job["sheet"]["format"],
+            "height_mm": job["sheet"]["height_mm"],
+            "width_mm": job["sheet"]["width_mm"],
+        },
+        "source_job_id": job["job_id"],
+        "units": "mm",
+        "views": [
+            {
+                "entities": [
+                    {
+                        "end_mm": entity["end_mm"],
+                        "id": entity["id"],
+                        "layer": entity["layer"],
+                        "start_mm": entity["start_mm"],
+                        "type": entity["type"],
+                    }
+                    for entity in view["entities"]
+                    if entity["type"] == "line"
+                ],
+                "id": view["id"],
+                "label": view.get("label", view["id"]),
+                "origin_mm": view["origin_mm"],
+                "scale": view["scale"],
+            }
+            for view in job["views"]
+        ],
+    }, warnings
+
+
+def unsupported_entity_warnings(job):
+    warnings = []
+    for view in job["views"]:
+        for entity in view["entities"]:
+            if entity["type"] == "line":
+                continue
+            warnings.append({
+                "code": "unsupported_entity",
+                "entity_id": entity["id"],
+                "message": f"Entity {entity['id']} type {entity['type']} is not supported in I1 and was skipped.",
+                "view_id": view["id"],
+            })
+    return warnings
+
+
+def default_style():
+    return {
+        "stroke": "#111111",
+        "stroke_width": 0.35,
+    }

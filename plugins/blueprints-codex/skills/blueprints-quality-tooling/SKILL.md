@@ -13,5 +13,6 @@ commands.
 ## Command Layers
 
 - `quality:fast`: plugin, governance, syntax, and infra checks.
-- `quality:deep`: reserved for future heavier product checks.
+- `test:backend`: Python stdlib backend tests for the active I1 product slice.
+- `quality:deep`: `quality:fast` plus backend product tests.
 - `codex:ship`: final gate before delivery.

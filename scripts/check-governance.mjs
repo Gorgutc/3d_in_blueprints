@@ -30,7 +30,9 @@ function listFiles(startRel) {
   const stat = statSync(start);
   if (stat.isFile()) return [startRel];
   const files = [];
-  for (const entry of readdirSync(start, { withFileTypes: true })) {
+  const entries = readdirSync(start, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
     const rel = path.join(startRel, entry.name).replaceAll('\\', '/');
     if (entry.isDirectory()) files.push(...listFiles(rel));
     if (entry.isFile()) files.push(rel);
@@ -55,7 +57,7 @@ const activeFiles = [
   'package.json',
   'lefthook.yml',
   '.github/workflows/codex-infra.yml',
-].filter(exists);
+].filter(exists).sort((a, b) => a.localeCompare(b));
 
 const stalePassTotals = /\b(?:56\/56|119\/119|32\/32|\d+\/\d+\s+PASS)\b/i;
 const staleProjectRules = [

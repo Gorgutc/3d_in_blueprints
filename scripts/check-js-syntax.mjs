@@ -14,7 +14,8 @@ function collect(rel) {
     const stat = statSync(absolute);
     if (stat.isFile() && /\.(?:js|mjs|cjs)$/.test(rel)) files.push(rel);
     if (stat.isDirectory()) {
-      for (const entry of readdirSync(absolute)) {
+      const entries = readdirSync(absolute).sort((a, b) => a.localeCompare(b));
+      for (const entry of entries) {
         collect(path.join(rel, entry).replaceAll('\\', '/'));
       }
     }
@@ -24,6 +25,7 @@ function collect(rel) {
 }
 
 for (const rel of roots) collect(rel);
+files.sort((a, b) => a.localeCompare(b));
 
 let failed = 0;
 for (const file of files) {

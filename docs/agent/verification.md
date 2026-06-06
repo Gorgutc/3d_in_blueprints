@@ -1,6 +1,7 @@
 # Verification
 
-This repository currently verifies only Codex infrastructure.
+This repository verifies Codex infrastructure plus the active I1 backend test
+slice.
 
 ## Commands
 
@@ -8,6 +9,7 @@ This repository currently verifies only Codex infrastructure.
 npm run codex:verify-plugin
 npm run check:governance
 npm run check:js
+npm run test:backend
 npm run verify
 npm run quality:fast
 npm run quality:deep
@@ -27,7 +29,10 @@ The gate checks:
 - governance against stale source-repo rules and old pass totals;
 - CI presence and command order;
 - iteration handoff log presence.
+- backend CLI, DrawingIR, SVG, and diagnostics behavior covered by Python
+  stdlib `unittest` tests.
 
-The gate does not build an app, run a browser, compile an executable, or load
-Blender until a product implementation iteration explicitly adds and verifies
-that behavior.
+The gate does not run a browser, compile an executable, load Blender, package
+an add-on, build installers, invoke FreeCAD/TechDraw, or generate committed
+product artifacts until a product implementation iteration explicitly adds and
+verifies that behavior.

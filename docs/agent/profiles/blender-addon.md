@@ -41,6 +41,28 @@ Before product add-on code lands, the implementation iteration must define:
 - add-on preferences and asset paths;
 - artifact handling in `DO_NOT_PUSH.md`.
 
+## I1 Backend Contract
+
+I1 may add backend-only product code without adding Blender add-on code,
+Blender runtime commands, packages, installers, browser gates, or generated
+product artifacts.
+
+I1 resolves this backend bridge contract:
+
+- backend invocation: `python -m blueprints_backend <job-folder>`;
+- job folder input: `job.json`;
+- job folder outputs: `drawing_ir.json`, `sheet.svg`, and `diagnostics.json`;
+- timeout owner: the future Blender client owns subprocess timeout enforcement;
+- backend error behavior: return non-zero only for malformed input, missing
+  required files, or filesystem write failure; unsupported geometry is reported
+  in diagnostics warnings when a valid sheet can still be emitted;
+- canonical output: deterministic SVG generated from DrawingIR;
+- test command: `npm run test:backend` using Python stdlib `unittest`.
+
+The Blender add-on entrypoint, add-on package layout, `bl_info`,
+registration/unregistration contract, background Blender smoke command, and
+release zip format remain I2/I7 decisions and must stay out of I1.
+
 ## Iteration Boundaries
 
 - I1 owns backend CLI, job schema, DrawingIR, deterministic SVG, and diagnostics.
