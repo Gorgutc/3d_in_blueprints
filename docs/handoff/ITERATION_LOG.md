@@ -1271,3 +1271,142 @@ repo_state: branch codex/i6-image-assist published as draft PR #8
 next_iteration_ready: false
 resume_prompt: Review PR #8 at https://github.com/Gorgutc/3d_in_blueprints/pull/8 and confirm CI. After PR #8 is merged into `main`, start I7 Packaging + Hardening from updated `main`.
 ```
+
+```yaml
+iteration_id: I7-packaging-hardening
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Added stdlib-only release packaging for the active Blender add-on +
+    backend scope.
+  - Added add-on zip packaging from `blender_addon/blueprints_addon` with the
+    add-on `bl_info["version"]` as the artifact version.
+  - Added backend bundle zip packaging from `backend/src/blueprints_backend`
+    with `blueprints_backend.__version__` as the artifact version.
+  - Added `release_manifest.json` with schema version, package version, commit
+    stamp, artifact ids, source folders, and artifact versions.
+  - Added `npm run test:packaging`, which writes release artifacts into a
+    temporary directory and verifies required zip contents.
+  - Added backend crash-log hardening for unexpected exceptions:
+    `crash.log` plus `backend_crash` diagnostics output.
+  - Added Windows/Linux CI matrix for `npm run codex:ship`.
+  - Updated README, release docs, Blender profile, ADR wording, verification
+    docs, quality-tooling docs, repo-local skills, hooks, governance, verifier,
+    and artifact ignore policy for I7.
+  - Kept `windows-exe` dormant; I7 only packages the active add-on/backend
+    artifacts and does not add installers or executable packaging.
+files_changed:
+  - .codex/hooks/post-tool-verify.js
+  - .github/workflows/codex-infra.yml
+  - .gitignore
+  - AGENTS.md
+  - README.md
+  - backend/src/blueprints_backend/cli.py
+  - backend/src/blueprints_backend/diagnostics.py
+  - backend/tests/test_cli.py
+  - backend/tests/test_packaging.py
+  - docs/agent/adrs/0002-dormant-product-profiles.md
+  - docs/agent/adrs/0003-blender-addon-backend-activation.md
+  - docs/agent/profiles/blender-addon.md
+  - docs/agent/quality-tooling.md
+  - docs/agent/skill-map.md
+  - docs/agent/verification.md
+  - docs/handoff/ITERATION_LOG.md
+  - docs/release/packaging.md
+  - package.json
+  - plugins/blueprints-codex/skills/blueprints-blender-addon-profile/SKILL.md
+  - plugins/blueprints-codex/skills/blueprints-quality-tooling/SKILL.md
+  - scripts/check-governance.mjs
+  - scripts/package_release.py
+  - scripts/run-packaging-smoke.mjs
+  - scripts/verify-codex-infra.mjs
+commands_run:
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED phase confirmed missing I7 behavior; crash-log test raised
+      the original `RuntimeError`, and packaging test failed because
+      `scripts/package_release.py` did not exist.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: GREEN phase passed with 25 backend tests OK and 3 Blender bridge
+      unit tests OK after adding crash diagnostics and packaging.
+  - command: npm.cmd run test:packaging
+    result: PASS
+    evidence: Packaging smoke wrote and verified 2 temporary artifacts.
+  - command: npm.cmd run check:governance
+    result: PASS
+    evidence: Governance scan passed with 774/774 checks and 0 FAIL after
+      adding `docs/release` and Python scripts to the active scan.
+  - command: npm.cmd run check:js
+    result: PASS
+    evidence: JavaScript syntax scan passed with 11/11 checks and 0 FAIL.
+  - command: npm.cmd run verify
+    result: PASS
+    evidence: Infra verifier passed with 327/327 checks and 0 FAIL after adding
+      the packaging-smoke-as-command guard.
+  - command: git check-ignore -v docs\release\packaging.md
+    result: PASS
+    evidence: Command exited non-zero with no output after root-anchoring
+      `/release/`, confirming the release doc is no longer ignored.
+  - command: explicit spawned subagents
+    result: PASS_WITH_FIXED_FINDINGS
+    evidence: Frozen-decision, Blender, quality-tooling, and code-quality
+      roles passed. Codex-infra and instruction-drift roles found the
+      `docs/release/packaging.md` ignore blocker before `.gitignore` was fixed.
+      Verification reviewer reported the RED test failures before the GREEN
+      implementation. Component reuse found skill-map naming drift before
+      `docs/agent/skill-map.md` and the verifier guard were fixed. Remaining
+      roles were spawned after the fix or covered by fallback/local review if
+      unavailable.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Full ship gate passed with plugin 214/214, governance 774/774,
+      JS 11/11, infra 327/327, backend 25 tests OK, bridge unit 3 tests OK,
+      and packaging smoke PASS.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Blender 5.1.2 background smoke exported `scene.obj`, ran the
+      bridge smoke, and exited successfully.
+artifacts_generated:
+  - Packaging smoke generated temporary add-on/backend zip artifacts and
+    removed them with the temp directory.
+  - Blender smoke generated temporary backend job outputs under the OS temp
+    directory.
+acceptance_gates:
+  passed:
+    - Add-on zip and backend bundle are version-stamped.
+    - Release manifest records package version, commit, artifacts, sources, and
+      artifact versions.
+    - Packaging smoke is deterministic, stdlib-only, and temp-dir scoped.
+    - Backend unexpected exceptions write `crash.log` and diagnostics with
+      `outputs.crash_log`.
+    - CI runs `codex:ship` on Ubuntu and Windows.
+    - Generated zips and root release/dist folders are ignored, while
+      `docs/release/packaging.md` remains trackable.
+    - `quality:deep` and `codex:ship` include packaging smoke.
+    - `windows-exe` remains dormant.
+  failed: []
+accepted_deviations:
+  - `test:packaging` does not install the add-on inside Blender; I7 verifies
+    package structure only. Blender runtime behavior remains covered by the
+    explicit `test:blender` smoke.
+explicit_defers:
+  - Windows executable packaging, installers, code signing, and update flows.
+  - FreeCAD/TechDraw execution and hidden-line extraction.
+  - OCCT/C++ provider work.
+  - DXF/PDF derived exports and DWG.
+  - Committed release artifacts; generated release outputs remain local only.
+blockers: []
+risks_or_regressions:
+  - Release artifacts are intentionally generated by explicit command only;
+    future distribution work must define signing, installer, and publishing
+    policy before producing public release packages.
+  - Packaging smoke validates zip contents and manifest metadata, not Blender
+    install UX.
+repo_state: dirty working branch codex/i7-packaging-hardening; final commit,
+  push, and PR publication still pending.
+next_iteration_ready: false
+resume_prompt: Finish I7 publication from `codex/i7-packaging-hardening`: run a
+  fresh `npm.cmd run codex:ship`, complete `/review` or documented fallback
+  review, stage, commit, push, and open the I7 PR.
+```

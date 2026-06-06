@@ -28,9 +28,10 @@ process.stdin.on('end', () => {
     /\.agents\//,
     /plugins\/blueprints-codex\//,
     /docs\/agent\//,
+    /docs\/release\//,
     /backend\//,
     /blender_addon\//,
-    /scripts\/.*\.(?:js|mjs|cjs)/,
+    /scripts\/.*\.(?:js|mjs|cjs|py)/,
     /package(?:-lock)?\.json/,
     /lefthook\.yml/,
     /\.github\/workflows\/codex-infra\.yml/

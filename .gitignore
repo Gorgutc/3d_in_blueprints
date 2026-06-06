@@ -8,7 +8,11 @@ coverage/
 # Local reports and generated artifacts
 reports/
 test-results/
+/dist/
+/release/
 blueprints-job-*/
+*.zip
+*.tar.gz
 *.blend
 *.obj
 *.glb

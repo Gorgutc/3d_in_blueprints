@@ -12,10 +12,15 @@ specific iteration adds verified product checks.
 - `scripts/check-js-syntax.mjs`: runs `node --check` on hook and script files.
 - `scripts/run-python-tests.mjs`: resolves a local Python interpreter and runs
   stdlib `unittest` discovery for backend, GOST composer, Dimensions v1,
-  Standards DB v1, Image Assist v1, and bridge unit tests.
+  Standards DB v1, Image Assist v1, release packaging behavior, and bridge
+  unit tests.
 - `scripts/run-blender-smoke.mjs`: resolves Blender 5.1 and runs the I2 bridge
   smoke test, including backend sheet composition, in background mode when
   invoked explicitly.
+- `scripts/package_release.py`: creates version-stamped add-on and backend zip
+  artifacts plus a release manifest using Python stdlib only.
+- `scripts/run-packaging-smoke.mjs`: resolves Python and runs packaging into a
+  temporary directory, verifying required zip contents and artifact policy.
 - `scripts/verify-codex-infra.mjs`: validates required docs, hooks, agents,
   CI, and authority contracts.
 - `lefthook.yml`: optional local pre-commit and pre-push quality gates.
@@ -33,7 +38,11 @@ of stale-total governance scanning.
 
 - `quality:fast`: plugin, governance, JS syntax, and infra verification.
 - `test:backend`: Python stdlib tests for backend, GOST composer, Dimensions
-  v1, Standards DB v1, Image Assist v1, and bridge unit behavior.
+  v1, Standards DB v1, Image Assist v1, release packaging behavior, and bridge
+  unit behavior.
 - `test:blender`: explicit Blender 5.1 background smoke for bridge changes.
-- `quality:deep`: `quality:fast` plus backend and bridge unit tests.
+- `test:packaging`: stdlib packaging smoke that writes generated release
+  artifacts only to a temporary directory.
+- `quality:deep`: `quality:fast` plus backend, bridge unit, and packaging
+  smoke tests.
 - `codex:ship`: required final local gate before commit, push, PR, or delivery.

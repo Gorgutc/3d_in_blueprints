@@ -200,6 +200,30 @@ computer-vision measurement, CAD projection, derived exports, or packaging.
   images, image classification, edge detection, template matching, CAD
   projection, DXF/PDF/DWG, and packaging remain future iterations.
 
+## I7 Packaging + Hardening Contract
+
+I7 activates release packaging for the selected Blender add-on + backend scope
+without activating the dormant Windows executable profile.
+
+- add-on artifact: version-stamped zip of `blender_addon/blueprints_addon`
+  using the Blender add-on `bl_info["version"]`;
+- backend artifact: version-stamped zip of `backend/src/blueprints_backend`
+  using `blueprints_backend.__version__`;
+- release manifest: `release_manifest.json` records schema version, package
+  version, commit stamp, artifact ids, source folders, and artifact versions;
+- packaging smoke: `npm run test:packaging` writes artifacts only into a
+  temporary directory and verifies required zip contents;
+- CI: the Codex infrastructure workflow runs `npm run codex:ship` on Windows
+  and Linux;
+- crash logs: unexpected backend exceptions write `crash.log` and an error
+  diagnostics payload that references that log;
+- artifact policy: generated zips, release folders, and backend job outputs
+  remain uncommitted except for explicit test fixtures.
+
+I7 does not add installers, code signing, Windows executable packaging,
+FreeCAD/TechDraw execution, OCCT/C++ builds, DXF/PDF/DWG exports, or committed
+release artifacts.
+
 ## Iteration Boundaries
 
 - I1 owns backend CLI, job schema, DrawingIR, deterministic SVG, and diagnostics.
