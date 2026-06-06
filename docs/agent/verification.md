@@ -33,6 +33,8 @@ The gate checks:
 - backend CLI, DrawingIR, SVG, and diagnostics behavior covered by Python
   stdlib `unittest` tests.
 - GOST v1 sheet composition covered by backend golden SVG tests.
+- Dimensions v1 explicit annotation behavior covered by backend golden SVG and
+  unsupported-dimension diagnostics tests.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
 

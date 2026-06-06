@@ -9,9 +9,10 @@ technical drawings from 3D scene data.
 - Active profile: `blender-addon`.
 - Dormant profile: `windows-exe`, until packaging work explicitly activates it.
 - Implemented slices: I1 backend CLI + DrawingIR + deterministic SVG +
-  diagnostics; I2 Blender Bridge thin-client smoke; I3 GOST Composer v1.
-- Not implemented yet: FreeCAD/TechDraw execution, dimensions, standards DB,
-  image assist, packaging, DXF/PDF, DWG.
+  diagnostics; I2 Blender Bridge thin-client smoke; I3 GOST Composer v1;
+  I4 Dimensions v1.
+- Not implemented yet: FreeCAD/TechDraw execution, standards DB, image assist,
+  packaging, DXF/PDF, DWG.
 
 ## Backend I1 Contract
 
@@ -70,6 +71,25 @@ The Blender bridge requests GOST sheet composition in its backend job payload
 but still does not synthesize drawing entities. I3 does not add FreeCAD/TechDraw
 projection, dimensions, standards DB, image assist, packaging, or derived
 DXF/PDF/DWG exports.
+
+## Dimensions I4 V1
+
+The backend now supports explicit basic dimension annotations on each view
+through `view.dimensions[]` in `job.json`.
+
+I4 provides:
+
+- DrawingIR dimension records on a dedicated `dimension` layer;
+- deterministic SVG rendering for basic linear, diameter, radius, hole, and
+  center-distance annotations;
+- backend validation for supported dimension payloads;
+- diagnostics warnings for unsupported dimension types, which are skipped while
+  valid supported dimensions still render;
+- golden SVG coverage for a dimensioned A4 GOST job.
+
+I4 does not infer dimensions from projected geometry, does not add angular or
+ordinate dimensions, tolerances, detailed GOST dimension rules, standards DB,
+image assist, packaging, or derived DXF/PDF/DWG exports.
 
 ## Verification
 

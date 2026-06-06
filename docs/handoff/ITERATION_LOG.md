@@ -731,3 +731,204 @@ repo_state: branch codex/i3-gost-composer published as draft PR #5
 next_iteration_ready: false
 resume_prompt: Review PR #5 at https://github.com/Gorgutc/3d_in_blueprints/pull/5 and confirm CI. After PR #5 is merged into `main`, start I4 Dimensions v1 from updated `main`.
 ```
+
+```yaml
+iteration_id: I4-dimensions-v1
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Started from synced `main` after PR #5 was merged.
+  - Created branch `codex/i4-dimensions-v1`.
+  - Added backend-owned explicit basic dimension annotations through
+    `view.dimensions[]`.
+  - Added DrawingIR dimension records on a dedicated `dimension` layer.
+  - Added deterministic SVG rendering for linear, diameter, radius, hole, and
+    center-distance dimensions.
+  - Added validation for supported dimension payloads and warnings for
+    unsupported dimension types.
+  - Fixed review-found scale handling so diameter and hole leaders account for
+    `view.scale`.
+  - Fixed review-found duplicate `view.id` handling by rejecting duplicates and
+    avoiding id-keyed dimension lookup in DrawingIR.
+  - Consolidated the supported dimension type contract into
+    `dimensions.SUPPORTED_DIMENSION_TYPES`.
+  - Added a dimensioned A4 GOST job fixture and golden SVG coverage.
+  - Updated README, Blender add-on profile docs, verification docs, quality
+    tooling docs, and infrastructure verification for I4.
+  - Added infrastructure regression checks for duplicate view ids, ordered
+    dimension assignment, shared supported dimension types, and scaled
+    model-derived leader lengths.
+files_changed:
+  - README.md
+  - backend/src/blueprints_backend/dimensions.py
+  - backend/src/blueprints_backend/drawing_ir.py
+  - backend/src/blueprints_backend/job.py
+  - backend/src/blueprints_backend/svg_writer.py
+  - backend/tests/fixtures/dimensions_job.json
+  - backend/tests/fixtures/golden_dimensions_a4.svg
+  - backend/tests/test_cli.py
+  - docs/agent/profiles/blender-addon.md
+  - docs/agent/quality-tooling.md
+  - docs/agent/verification.md
+  - docs/handoff/ITERATION_LOG.md
+  - plugins/blueprints-codex/skills/blueprints-quality-tooling/SKILL.md
+  - scripts/verify-codex-infra.mjs
+commands_run:
+  - command: git switch -c codex/i4-dimensions-v1
+    result: PASS
+    evidence: Created I4 branch from clean synced `main`.
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED phase failed because the dimension golden expected SVG
+      annotations and unsupported-dimension warnings before I4 existed.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: GREEN phase passed with 10 backend tests and 3 bridge unit tests
+      after adding Dimensions v1.
+  - command: component reuse final audit
+    result: FAIL
+    evidence: Found unscaled diameter and hole leader offsets for non-1:1 views
+      and duplicated supported dimension type constants.
+  - command: code deadwood final audit
+    result: FAIL
+    evidence: Found the duplicated supported dimension type contract between
+      `job.py` and `dimensions.py`.
+  - command: code quality final audit
+    result: FAIL
+    evidence: Found duplicate `view.id` values could corrupt dimension
+      assignment because DrawingIR used an id-keyed dimension lookup.
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED regression tests confirmed non-1:1 diameter and hole leaders
+      used unscaled offsets, and duplicate view ids were accepted.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: GREEN rerun passed with 12 backend tests and 3 bridge unit tests
+      after fixing scaled leaders, duplicate view id validation, and the
+      supported type source of truth.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Final smoke used Blender 5.1.2, exported OBJ, ran backend,
+      loaded diagnostics/SVG preview, and quit cleanly after the backend
+      regression fixes.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Fresh post-fix ship gate passed with plugin 214/214, governance
+      750/750, JS 10/10, infra 249/249, backend 12 tests OK, and bridge unit
+      3 tests OK.
+  - command: generated artifact scan
+    result: FAIL
+    evidence: Deadwood audit found ignored `backend/src/blueprints_backend/__pycache__`
+      after local Python probes.
+  - command: generated artifact cleanup
+    result: PASS
+    evidence: Removed only resolved `__pycache__` paths under the repository
+      backend path.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Fresh post-cleanup and post-verifier-update ship gate passed
+      again with plugin 214/214, governance 750/750, JS 10/10, infra 254/254,
+      backend 12 tests OK, and bridge unit 3 tests OK.
+  - command: git diff --check
+    result: PASS
+    evidence: No whitespace errors; Git reported CRLF normalization warnings
+      only.
+  - command: generated artifact scan
+    result: PASS
+    evidence: No repo `__pycache__`, OBJ/GLB/GLTF, DXF/PDF/DWG, package,
+      installer, log, or temp artifacts found under backend or blender_addon.
+  - command: explicit subagent and fallback review
+    result: PASS
+    evidence: Fresh code quality, component reuse, deadwood, visual QA,
+      instruction drift, frozen-decision, and quality-tooling reviews found no
+      remaining blockers after fixes. Runtime behavior and tech-stack roles
+      timed out and were covered by documented local fallback review with no
+      new runtime commands, dependencies, compilers, installers, FreeCAD/TechDraw,
+      Blender runtime activation, browser gates, packaging, or derived export
+      activation in I4.
+artifacts_generated:
+  - backend/tests/fixtures/golden_dimensions_a4.svg
+acceptance_gates:
+  passed:
+    - `view.dimensions[]` accepts explicit basic dimension annotations.
+    - Supported I4 dimension types are `linear`, `diameter`, `radius`, `hole`,
+      and `center_distance`.
+    - Unsupported dimension types emit `unsupported_dimension` diagnostics and
+      are skipped from DrawingIR.
+    - Deterministic SVG output matches the committed dimensions golden fixture.
+    - Diameter and hole leaders follow `view.scale` for model-derived diameter
+      offsets.
+    - Duplicate `view.id` values return diagnostics instead of corrupting
+      dimension assignment.
+  failed: []
+accepted_deviations: []
+explicit_defers:
+  - Automatic projection-derived dimensions.
+  - Angular dimensions, ordinate dimensions, tolerances, and detailed GOST
+    dimensioning rules.
+  - I5 standards database and fastener matching.
+  - I6 image assist.
+  - I7 add-on zip, backend bundle, release docs, version stamping, crash logs,
+    CI matrix, and packaging smoke.
+  - FreeCAD/TechDraw execution, DXF/PDF derived exports, and DWG.
+blockers: []
+risks_or_regressions:
+  - Dimension placement is explicit and fixture-driven in I4; future projection
+    work must not move inference into the Blender bridge.
+  - SVG dimension placement uses fixed offsets and has no collision avoidance;
+    broader dimension-layout work needs rendered evidence before PASS.
+repo_state: dirty working branch codex/i4-dimensions-v1; I4 implementation is
+  not staged, committed, pushed, or opened as a PR.
+next_iteration_ready: false
+resume_prompt: Finish I4 publication from `codex/i4-dimensions-v1`: run fresh
+  `npm.cmd run codex:ship`, complete `/review` or documented fallback review,
+  stage, commit, push, and open the I4 PR.
+```
+
+```yaml
+iteration_id: I4-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I4 implementation as `4227be6 Add I4 dimensions v1`.
+  - Pushed `codex/i4-dimensions-v1` to origin.
+  - Opened draft PR #6 for I4.
+  - Preserved I4 defers for projection-derived dimensions, angular/ordinate
+    dimensions, tolerances, detailed GOST rules, standards, image assist,
+    exports, and packaging.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I4 dimensions v1"
+    result: PASS
+    evidence: Created commit `4227be6`; pre-commit `quality:fast` passed with
+      plugin 214/214, governance 750/750, JS 10/10, and infra 254/254.
+  - command: git push -u origin codex/i4-dimensions-v1
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 750/750, JS 10/10, infra 254/254, backend 12 tests
+      OK, and bridge unit 3 tests OK.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/6
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I4 implementation is committed and pushed for review.
+    - Draft PR #6 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+explicit_defers:
+  - Check remote CI for PR #6.
+  - Review and merge PR #6 before starting I5 Standards DB.
+  - I5-I7 product iterations remain pending.
+blockers: []
+risks_or_regressions:
+  - SVG dimension placement still uses fixed offsets and no collision avoidance;
+    future broader dimension-layout work needs rendered evidence before PASS.
+repo_state: branch codex/i4-dimensions-v1 published as draft PR #6
+next_iteration_ready: false
+resume_prompt: Review PR #6 at https://github.com/Gorgutc/3d_in_blueprints/pull/6 and confirm CI. After PR #6 is merged into `main`, start I5 Standards DB from updated `main`.
+```
