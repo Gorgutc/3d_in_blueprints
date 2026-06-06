@@ -1,0 +1,94 @@
+{
+  "fasteners": [
+    {
+      "designation": "Metric bolt M6",
+      "family": "bolt",
+      "id": "metric-bolt-m6",
+      "nominal_diameter_mm": 6,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M6"
+    },
+    {
+      "designation": "Metric nut M6",
+      "family": "nut",
+      "id": "metric-nut-m6",
+      "nominal_diameter_mm": 6,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M6"
+    },
+    {
+      "designation": "Metric washer M6",
+      "family": "washer",
+      "id": "metric-washer-m6",
+      "nominal_diameter_mm": 6,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M6"
+    },
+    {
+      "designation": "Metric bolt M8",
+      "family": "bolt",
+      "id": "metric-bolt-m8",
+      "nominal_diameter_mm": 8,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M8"
+    },
+    {
+      "designation": "Metric nut M8",
+      "family": "nut",
+      "id": "metric-nut-m8",
+      "nominal_diameter_mm": 8,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M8"
+    },
+    {
+      "designation": "Metric washer M8",
+      "family": "washer",
+      "id": "metric-washer-m8",
+      "nominal_diameter_mm": 8,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M8"
+    },
+    {
+      "designation": "Metric bolt M10",
+      "family": "bolt",
+      "id": "metric-bolt-m10",
+      "nominal_diameter_mm": 10,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M10"
+    },
+    {
+      "designation": "Metric nut M10",
+      "family": "nut",
+      "id": "metric-nut-m10",
+      "nominal_diameter_mm": 10,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M10"
+    },
+    {
+      "designation": "Metric washer M10",
+      "family": "washer",
+      "id": "metric-washer-m10",
+      "nominal_diameter_mm": 10,
+      "source_id": "project-authored-metric-fasteners-v1",
+      "standard": "starter-metric",
+      "thread": "M10"
+    }
+  ],
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "authority": "non_normative",
+      "description": "Project-authored starter fastener metadata for I5 matcher tests; no third-party standards table is copied.",
+      "id": "project-authored-metric-fasteners-v1",
+      "license": "Project-authored; no third-party license dependency."
+    }
+  ]
+}

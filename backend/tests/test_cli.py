@@ -10,6 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "backend" / "tests" / "fixtures"
+sys.path.insert(0, str(ROOT / "backend" / "src"))
+
+from blueprints_backend import standards as standards_module
 
 
 class BackendCliTests(unittest.TestCase):
@@ -374,6 +377,261 @@ class BackendCliTests(unittest.TestCase):
                         {
                             "code": "invalid_view",
                             "message": "view.id values must be unique.",
+                        }
+                    ],
+                    "outputs": {},
+                    "schema_version": "1.0",
+                    "status": "error",
+                    "warnings": [],
+                },
+                json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
+            )
+
+    def test_duplicate_dimension_ids_return_diagnostics_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            duplicate_dimension = json.loads(json.dumps(job["views"][0]["dimensions"][0]))
+            duplicate_dimension["type"] = "linear"
+            duplicate_dimension["start_mm"] = [0, 10]
+            duplicate_dimension["end_mm"] = [10, 10]
+            job["views"][0]["dimensions"].append(duplicate_dimension)
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                {
+                    "errors": [
+                        {
+                            "code": "invalid_dimension",
+                            "message": "dimension.id values must be unique within a view.",
+                        }
+                    ],
+                    "outputs": {},
+                    "schema_version": "1.0",
+                    "status": "error",
+                    "warnings": [],
+                },
+                json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
+            )
+
+    def test_non_standards_job_does_not_load_standards_catalog(self):
+        original_load_catalog = standards_module.load_catalog
+
+        def fail_if_loaded():
+            raise AssertionError("standards catalog should not be loaded")
+
+        standards_module.load_catalog = fail_if_loaded
+        try:
+            self.assertEqual(
+                (
+                    {
+                        "fastener_matches": [],
+                        "sources": [],
+                    },
+                    [],
+                ),
+                standards_module.match_job({"job_id": "no-standards"}),
+            )
+        finally:
+            standards_module.load_catalog = original_load_catalog
+
+    def test_standards_job_reports_fastener_matches_and_source_license(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            shutil.copyfile(FIXTURES / "standards_job.json", job_dir / "job.json")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                (FIXTURES / "golden_dimensions_a4.svg")
+                .read_text(encoding="utf-8")
+                .replace("dimensioned-bracket", "standards-fastener-bracket")
+                .replace("Dimensioned Bracket", "Standards Fastener Bracket")
+                .replace("DIM-001", "STD-001"),
+                (job_dir / "sheet.svg").read_text(encoding="utf-8"),
+            )
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual([], diagnostics["warnings"])
+            self.assertEqual(
+                [
+                    {
+                        "authority": "non_normative",
+                        "description": "Project-authored starter fastener metadata for I5 matcher tests; no third-party standards table is copied.",
+                        "id": "project-authored-metric-fasteners-v1",
+                        "license": "Project-authored; no third-party license dependency.",
+                    }
+                ],
+                diagnostics["standards"]["sources"],
+            )
+            self.assertEqual(
+                ["metric-bolt-m8", "metric-nut-m8", "metric-washer-m8"],
+                [
+                    match["entry"]["id"]
+                    for match in diagnostics["standards"]["fastener_matches"]
+                ],
+            )
+
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                ["bolt", "nut", "washer"],
+                [
+                    match["entry"]["family"]
+                    for match in drawing_ir["standards"]["fastener_matches"]
+                ],
+            )
+            self.assertEqual(
+                ["match-m8-bolt", "match-m8-nut", "match-m8-washer"],
+                [
+                    match["request_id"]
+                    for match in drawing_ir["standards"]["fastener_matches"]
+                ],
+            )
+
+    def test_null_standards_is_treated_as_omitted(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            job["standards"] = None
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertNotIn("standards", diagnostics)
+
+    def test_unsupported_standard_family_is_reported_as_warning_and_skipped(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            job["standards"] = {
+                "fastener_matches": [
+                    {
+                        "id": "match-bearing-m8",
+                        "dimension_id": "dim-hole-note",
+                        "family": "bearing",
+                        "nominal_diameter_mm": 8,
+                        "view_id": "front",
+                    }
+                ]
+            }
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual(
+                [
+                    {
+                        "code": "unsupported_standard_family",
+                        "family": "bearing",
+                        "message": "Fastener family bearing is not supported in I5 and was skipped.",
+                        "standard_match_id": "match-bearing-m8",
+                    }
+                ],
+                diagnostics["warnings"],
+            )
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual([], drawing_ir["standards"]["fastener_matches"])
+
+    def test_standard_match_not_found_is_reported_as_warning(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            job["standards"] = {
+                "fastener_matches": [
+                    {
+                        "id": "match-bolt-m7",
+                        "dimension_id": "dim-hole-note",
+                        "family": "bolt",
+                        "nominal_diameter_mm": 7,
+                        "view_id": "front",
+                    }
+                ]
+            }
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual(
+                [
+                    {
+                        "code": "standard_match_not_found",
+                        "family": "bolt",
+                        "message": "No I5 standards DB fastener matched family bolt with nominal diameter 7 mm.",
+                        "nominal_diameter_mm": 7,
+                        "standard_match_id": "match-bolt-m7",
+                    }
+                ],
+                diagnostics["warnings"],
+            )
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual([], drawing_ir["standards"]["fastener_matches"])
+
+    def test_standard_match_referencing_unsupported_dimension_is_skipped(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            job["views"][0]["dimensions"].append({
+                "id": "dim-angle-future",
+                "type": "angular",
+            })
+            job["standards"] = {
+                "fastener_matches": [
+                    {
+                        "id": "match-unsupported-dimension",
+                        "dimension_id": "dim-angle-future",
+                        "family": "bolt",
+                        "nominal_diameter_mm": 8,
+                        "view_id": "front",
+                    }
+                ]
+            }
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                ["unsupported_dimension", "standard_reference_not_found"],
+                [
+                    warning["code"]
+                    for warning in diagnostics["warnings"]
+                ],
+            )
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual([], drawing_ir["standards"]["fastener_matches"])
+
+    def test_duplicate_standard_match_ids_return_diagnostics_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "standards_job.json").read_text(encoding="utf-8"))
+            duplicate_request = json.loads(json.dumps(job["standards"]["fastener_matches"][0]))
+            duplicate_request["family"] = "nut"
+            job["standards"]["fastener_matches"].append(duplicate_request)
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                {
+                    "errors": [
+                        {
+                            "code": "invalid_standards",
+                            "message": "standards.fastener_matches.id values must be unique.",
                         }
                     ],
                     "outputs": {},

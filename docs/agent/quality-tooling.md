@@ -11,8 +11,8 @@ specific iteration adds verified product checks.
   drift.
 - `scripts/check-js-syntax.mjs`: runs `node --check` on hook and script files.
 - `scripts/run-python-tests.mjs`: resolves a local Python interpreter and runs
-  stdlib `unittest` discovery for backend, GOST composer, Dimensions v1, and
-  bridge unit tests.
+  stdlib `unittest` discovery for backend, GOST composer, Dimensions v1,
+  Standards DB v1, and bridge unit tests.
 - `scripts/run-blender-smoke.mjs`: resolves Blender 5.1 and runs the I2 bridge
   smoke test, including backend sheet composition, in background mode when
   invoked explicitly.
@@ -33,7 +33,7 @@ of stale-total governance scanning.
 
 - `quality:fast`: plugin, governance, JS syntax, and infra verification.
 - `test:backend`: Python stdlib tests for backend, GOST composer, Dimensions
-  v1, and bridge unit behavior.
+  v1, Standards DB v1, and bridge unit behavior.
 - `test:blender`: explicit Blender 5.1 background smoke for bridge changes.
 - `quality:deep`: `quality:fast` plus backend and bridge unit tests.
 - `codex:ship`: required final local gate before commit, push, PR, or delivery.

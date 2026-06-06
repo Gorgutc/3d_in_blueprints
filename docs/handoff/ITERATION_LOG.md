@@ -932,3 +932,116 @@ repo_state: branch codex/i4-dimensions-v1 published as draft PR #6
 next_iteration_ready: false
 resume_prompt: Review PR #6 at https://github.com/Gorgutc/3d_in_blueprints/pull/6 and confirm CI. After PR #6 is merged into `main`, start I5 Standards DB from updated `main`.
 ```
+
+```yaml
+iteration_id: I5-standards-db
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Added backend-owned Standards DB v1 fastener matching behind
+    `standards.fastener_matches[]` in `job.json`.
+  - Added a local stdlib-only starter fastener catalog for `bolt`, `nut`, and
+    `washer` families.
+  - Recorded source and license metadata for the starter catalog as
+    project-authored, non-normative data with no third-party standards table
+    copied.
+  - Added matcher output under `standards` in DrawingIR and diagnostics for
+    jobs that request standards matching.
+  - Added diagnostics warnings for unsupported fastener families, unmatched
+    nominal diameters, and references to skipped or missing dimensions.
+  - Added validation for standards match payloads, duplicate standards match
+    ids, and duplicate per-view dimension ids.
+  - Kept SVG output unchanged for I5; standards matching does not add layout or
+    visual annotations in this iteration.
+  - Updated README, Blender profile, verification docs, quality-tooling docs,
+    quality-tooling skill, and infra verifier for I5.
+files_changed:
+  - README.md
+  - backend/src/blueprints_backend/cli.py
+  - backend/src/blueprints_backend/diagnostics.py
+  - backend/src/blueprints_backend/drawing_ir.py
+  - backend/src/blueprints_backend/job.py
+  - backend/src/blueprints_backend/standards.py
+  - backend/src/blueprints_backend/data/standards_fasteners.json
+  - backend/tests/fixtures/standards_job.json
+  - backend/tests/test_cli.py
+  - docs/agent/profiles/blender-addon.md
+  - docs/agent/quality-tooling.md
+  - docs/agent/verification.md
+  - docs/handoff/ITERATION_LOG.md
+  - plugins/blueprints-codex/skills/blueprints-quality-tooling/SKILL.md
+  - scripts/verify-codex-infra.mjs
+commands_run:
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED phase confirmed missing I5 behavior; standards diagnostics
+      and warning assertions failed before standards implementation.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: GREEN phase passed with 15 backend tests OK and 3 bridge unit
+      tests OK after adding the first I5 matcher implementation.
+  - command: explicit subagent and fallback review
+    result: FAIL
+    evidence: Code quality, component reuse, instruction drift, frozen-decision,
+      quality-tooling, and verification reviewers found blockers around eager
+      standards catalog loading, raw unsupported dimension references, duplicate
+      ids, `standards: null`, and missing I5 handoff.
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED regression phase reproduced reviewer-found bugs for duplicate
+      dimension ids, duplicate standards match ids, eager standards catalog
+      loading, and unsupported-dimension references.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: Post-fix backend gate passed with 20 backend tests OK and 3 bridge
+      unit tests OK.
+  - command: npm.cmd run verify
+    result: PASS
+    evidence: I5 infra verifier passed with 279/279 checks and 0 FAIL.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Fresh final ship gate passed with plugin 214/214, governance
+      750/750, JS 10/10, infra 279/279, backend 20 tests OK, and bridge unit
+      3 tests OK.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - `standards.fastener_matches[]` accepts explicit fastener match requests.
+    - Supported I5 fastener families are `bolt`, `nut`, and `washer`.
+    - Catalog entries include explicit project-authored source and license
+      metadata.
+    - Unsupported families emit `unsupported_standard_family` warnings and are
+      skipped.
+    - Unmatched nominal diameters emit `standard_match_not_found` warnings and
+      are skipped.
+    - Standards references to missing or unsupported dimensions emit
+      `standard_reference_not_found` warnings and are skipped.
+    - Non-standards jobs do not load the standards catalog.
+    - Duplicate view ids, duplicate dimension ids, and duplicate standards match
+      ids return diagnostics errors instead of ambiguous matches.
+    - SVG output remains unchanged for standards matching in I5.
+  failed: []
+accepted_deviations:
+  - Starter standards data is intentionally non-normative project-authored
+    metadata for matcher plumbing; normative standards tables remain deferred.
+explicit_defers:
+  - Normative standards tables and exact fastener geometry.
+  - Automatic fastener detection and BOM generation.
+  - FreeCAD/TechDraw projection and hidden-line extraction.
+  - Image assist.
+  - DXF/PDF derived exports and DWG.
+  - Add-on zip, backend bundle, release docs, version stamping, crash logs, CI
+    matrix, and packaging smoke.
+blockers: []
+risks_or_regressions:
+  - The starter catalog is not a normative standards authority and must not be
+    presented as exact GOST/ISO/engineering reference data.
+  - I5 emits metadata matches only; future visual standards annotations need
+    separate rendered/golden evidence.
+repo_state: dirty working branch codex/i5-standards-db; final review, commit,
+  push, and PR publication still pending.
+next_iteration_ready: false
+resume_prompt: Finish I5 publication from `codex/i5-standards-db`: run fresh
+  `npm.cmd run codex:ship`, complete `/review` or documented fallback review,
+  stage, commit, push, and open the I5 PR.
+```

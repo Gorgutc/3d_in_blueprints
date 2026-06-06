@@ -45,6 +45,7 @@ def validate_job(payload, job_dir=None):
         for view in views:
             validate_view(view)
         validate_unique_view_ids(views)
+        validate_standards(payload.get("standards"))
         return
 
     validate_scene_source(payload.get("source"), job_dir)
@@ -102,6 +103,7 @@ def validate_view(view):
     require(isinstance(dimensions, list), "invalid_dimensions", "view.dimensions must be an array when provided.")
     for dimension in dimensions:
         validate_dimension(dimension)
+    validate_unique_dimension_ids(dimensions)
 
 
 def validate_entity(entity):
@@ -142,6 +144,41 @@ def validate_dimension(dimension):
 
     if "label" in dimension:
         require(isinstance(dimension["label"], str) and dimension["label"], "invalid_dimension", "dimension.label must be a non-empty string when provided.")
+
+
+def validate_standards(standards_payload):
+    if standards_payload is None:
+        return
+
+    require(isinstance(standards_payload, dict), "invalid_standards", "standards must be an object when provided.")
+    fastener_matches = standards_payload.get("fastener_matches", [])
+    require(isinstance(fastener_matches, list), "invalid_standards", "standards.fastener_matches must be an array when provided.")
+    for request in fastener_matches:
+        validate_fastener_match(request)
+    validate_unique_standard_match_ids(fastener_matches)
+
+
+def validate_fastener_match(request):
+    require(isinstance(request, dict), "invalid_standards", "Each standards.fastener_matches item must be an object.")
+    require(isinstance(request.get("id"), str) and request["id"], "invalid_standards", "standards.fastener_matches.id is required.")
+    require(isinstance(request.get("view_id"), str) and request["view_id"], "invalid_standards", "standards.fastener_matches.view_id is required.")
+    require(isinstance(request.get("dimension_id"), str) and request["dimension_id"], "invalid_standards", "standards.fastener_matches.dimension_id is required.")
+    require(isinstance(request.get("family"), str) and request["family"], "invalid_standards", "standards.fastener_matches.family is required.")
+    require(
+        is_number(request.get("nominal_diameter_mm")) and request["nominal_diameter_mm"] > 0,
+        "invalid_standards",
+        "standards.fastener_matches.nominal_diameter_mm must be positive.",
+    )
+
+
+def validate_unique_dimension_ids(dimensions):
+    dimension_ids = [dimension["id"] for dimension in dimensions]
+    require(len(dimension_ids) == len(set(dimension_ids)), "invalid_dimension", "dimension.id values must be unique within a view.")
+
+
+def validate_unique_standard_match_ids(fastener_matches):
+    match_ids = [request["id"] for request in fastener_matches]
+    require(len(match_ids) == len(set(match_ids)), "invalid_standards", "standards.fastener_matches.id values must be unique.")
 
 
 def validate_optional_offset(dimension):
