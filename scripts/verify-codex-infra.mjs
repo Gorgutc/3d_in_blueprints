@@ -48,8 +48,11 @@ const requiredFiles = [
   'scripts/run-blender-smoke.mjs',
   'scripts/install-hooks.mjs',
   'backend/src/blueprints_backend/gost.py',
+  'backend/src/blueprints_backend/dimensions.py',
   'backend/tests/fixtures/gost_job.json',
   'backend/tests/fixtures/golden_gost_a4.svg',
+  'backend/tests/fixtures/dimensions_job.json',
+  'backend/tests/fixtures/golden_dimensions_a4.svg',
   'blender_addon/blueprints_addon/__init__.py',
   'blender_addon/blueprints_addon/bridge.py',
   'blender_addon/blueprints_addon/preview.py',
@@ -287,20 +290,24 @@ if (exists('docs/agent/profiles/blender-addon.md')) {
   const profile = read('docs/agent/profiles/blender-addon.md');
   check('profile records I2 Blender bridge contract', /## I2 Blender Bridge Contract/.test(profile));
   check('profile records I3 GOST composer contract', /## I3 GOST Composer Contract/.test(profile));
+  check('profile records I4 Dimensions contract', /## I4 Dimensions Contract/.test(profile));
   check('profile records SceneSnapshot schema', /SceneSnapshot JSON schema/.test(profile));
   check('profile keeps packaging deferred from I2', /packaging remains I7/.test(profile));
   check('profile keeps projection deferred from I3', /CAD projection/.test(profile) && /future iterations/.test(profile));
+  check('profile keeps standards and image assist deferred from I4', /I4 adds backend-owned explicit basic dimension annotations/.test(profile) && /standards DB, image assist/.test(profile));
 }
 
 if (exists('README.md')) {
   const readme = read('README.md');
   check('README describes I2 bridge slice', /I2 Blender Bridge/.test(readme));
   check('README describes I3 GOST composer slice', /GOST I3 Composer/.test(readme));
+  check('README describes I4 dimensions slice', /Dimensions I4 V1/.test(readme));
   check('README lists Blender smoke command', /npm run test:blender/.test(readme));
   if (exists('docs/handoff/ITERATION_LOG.md')) {
     const handoff = read('docs/handoff/ITERATION_LOG.md');
     check('handoff records I2 bridge when README claims I2', !/I2 Blender Bridge/.test(readme) || /iteration_id:\s*I2-blender-bridge/.test(handoff));
     check('handoff records I3 GOST composer when README claims I3', !/GOST I3 Composer/.test(readme) || /iteration_id:\s*I3-gost-composer/.test(handoff));
+    check('handoff records I4 dimensions when README claims I4', !/Dimensions I4 V1/.test(readme) || /iteration_id:\s*I4-dimensions-v1/.test(handoff));
   }
 }
 
@@ -314,6 +321,34 @@ if (exists('backend/src/blueprints_backend/gost.py')) {
   const gost = read('backend/src/blueprints_backend/gost.py');
   check('GOST composer defines A4 frame margin constants', /FRAME_LEFT_MM = 20/.test(gost) && /FRAME_TOP_MM = 5/.test(gost));
   check('GOST composer avoids projection dependencies', !/FreeCAD|TechDraw|OCCT|subprocess/.test(gost));
+}
+
+if (exists('backend/src/blueprints_backend/dimensions.py')) {
+  const dimensions = read('backend/src/blueprints_backend/dimensions.py');
+  for (const dimensionType of ['linear', 'diameter', 'radius', 'hole', 'center_distance']) {
+    check(`Dimensions v1 supports ${dimensionType}`, new RegExp(`"${dimensionType}"`).test(dimensions));
+  }
+  check('Dimensions v1 emits unsupported_dimension warnings', /unsupported_dimension/.test(dimensions));
+  check('Dimensions v1 avoids projection dependencies', !/FreeCAD|TechDraw|OCCT|subprocess/.test(dimensions));
+}
+
+if (exists('backend/src/blueprints_backend/job.py')) {
+  const job = read('backend/src/blueprints_backend/job.py');
+  check('job validation includes view dimensions', /view\.dimensions must be an array/.test(job));
+  check('job validation checks supported dimension payloads', /validate_dimension/.test(job) && /diameter_mm must be positive/.test(job));
+  check('job validation rejects duplicate view ids', /validate_unique_view_ids/.test(job) && /view\.id values must be unique/.test(job));
+  check('job validation uses Dimensions v1 type source of truth', /dimensions\.SUPPORTED_DIMENSION_TYPES/.test(job));
+}
+
+if (exists('backend/src/blueprints_backend/drawing_ir.py')) {
+  const drawingIr = read('backend/src/blueprints_backend/drawing_ir.py');
+  check('DrawingIR assigns dimensions by view order', /for index, view in enumerate\(job\["views"\]\)/.test(drawingIr) && /"dimensions": view_dimensions\[index\]/.test(drawingIr));
+  check('DrawingIR avoids id-keyed dimension lookup', !/view_dimensions\s*=\s*\{/.test(drawingIr) && !/view_dimensions\[view\["id"\]\]/.test(drawingIr));
+}
+
+if (exists('backend/src/blueprints_backend/svg_writer.py')) {
+  const svgWriter = read('backend/src/blueprints_backend/svg_writer.py');
+  check('SVG dimension leaders scale model lengths', /model_length\(view, dimension\["diameter_mm"\] \/ 2\)/.test(svgWriter));
 }
 
 let failed = 0;

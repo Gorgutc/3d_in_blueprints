@@ -2,6 +2,8 @@ import json
 import math
 from pathlib import PurePath
 
+from . import dimensions
+
 
 class JobError(ValueError):
     def __init__(self, code, message):
@@ -42,6 +44,7 @@ def validate_job(payload, job_dir=None):
         require(isinstance(views, list) and views, "invalid_views", "views must contain at least one view.")
         for view in views:
             validate_view(view)
+        validate_unique_view_ids(views)
         return
 
     validate_scene_source(payload.get("source"), job_dir)
@@ -81,6 +84,11 @@ def validate_sheet_standard(sheet):
             require(isinstance(title_block[field], str) and title_block[field], "invalid_sheet", f"sheet.title_block.{field} must be a non-empty string.")
 
 
+def validate_unique_view_ids(views):
+    view_ids = [view["id"] for view in views]
+    require(len(view_ids) == len(set(view_ids)), "invalid_view", "view.id values must be unique.")
+
+
 def validate_view(view):
     require(isinstance(view, dict), "invalid_view", "Each view must be an object.")
     require(isinstance(view.get("id"), str) and view["id"], "invalid_view", "view.id is required.")
@@ -90,6 +98,10 @@ def validate_view(view):
     require(isinstance(entities, list), "invalid_entities", "view.entities must be an array.")
     for entity in entities:
         validate_entity(entity)
+    dimensions = view.get("dimensions", [])
+    require(isinstance(dimensions, list), "invalid_dimensions", "view.dimensions must be an array when provided.")
+    for dimension in dimensions:
+        validate_dimension(dimension)
 
 
 def validate_entity(entity):
@@ -101,6 +113,40 @@ def validate_entity(entity):
     require(is_pair(entity.get("start_mm")), "invalid_entity", "line.start_mm must be a two-number array.")
     require(is_pair(entity.get("end_mm")), "invalid_entity", "line.end_mm must be a two-number array.")
     require(isinstance(entity.get("layer"), str) and entity["layer"], "invalid_entity", "entity.layer is required.")
+
+
+def validate_dimension(dimension):
+    require(isinstance(dimension, dict), "invalid_dimension", "Each dimension must be an object.")
+    require(isinstance(dimension.get("id"), str) and dimension["id"], "invalid_dimension", "dimension.id is required.")
+    require(isinstance(dimension.get("type"), str) and dimension["type"], "invalid_dimension", "dimension.type is required.")
+    if dimension["type"] not in dimensions.SUPPORTED_DIMENSION_TYPES:
+        return
+
+    if dimension["type"] == "linear":
+        require(is_pair(dimension.get("start_mm")), "invalid_dimension", "linear.start_mm must be a two-number array.")
+        require(is_pair(dimension.get("end_mm")), "invalid_dimension", "linear.end_mm must be a two-number array.")
+        validate_optional_offset(dimension)
+    elif dimension["type"] == "diameter":
+        require(is_pair(dimension.get("center_mm")), "invalid_dimension", "diameter.center_mm must be a two-number array.")
+        require(is_number(dimension.get("diameter_mm")) and dimension["diameter_mm"] > 0, "invalid_dimension", "diameter.diameter_mm must be positive.")
+    elif dimension["type"] == "radius":
+        require(is_pair(dimension.get("center_mm")), "invalid_dimension", "radius.center_mm must be a two-number array.")
+        require(is_pair(dimension.get("point_mm")), "invalid_dimension", "radius.point_mm must be a two-number array.")
+    elif dimension["type"] == "hole":
+        require(is_pair(dimension.get("center_mm")), "invalid_dimension", "hole.center_mm must be a two-number array.")
+        require(is_number(dimension.get("diameter_mm")) and dimension["diameter_mm"] > 0, "invalid_dimension", "hole.diameter_mm must be positive.")
+    elif dimension["type"] == "center_distance":
+        centers = dimension.get("centers_mm")
+        require(isinstance(centers, list) and len(centers) == 2 and all(is_pair(center) for center in centers), "invalid_dimension", "center_distance.centers_mm must contain two point arrays.")
+        validate_optional_offset(dimension)
+
+    if "label" in dimension:
+        require(isinstance(dimension["label"], str) and dimension["label"], "invalid_dimension", "dimension.label must be a non-empty string when provided.")
+
+
+def validate_optional_offset(dimension):
+    if "offset_mm" in dimension:
+        require(is_pair(dimension["offset_mm"]), "invalid_dimension", "dimension.offset_mm must be a two-number array when provided.")
 
 
 def require(condition, code, message):

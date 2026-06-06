@@ -31,6 +31,8 @@ def render(drawing_ir):
         for entity in view["entities"]:
             if entity["type"] == "line":
                 lines.append(render_line(view, entity, layers[entity["layer"]]))
+        for dimension in view.get("dimensions", []):
+            lines.extend(render_dimension(view, dimension, layers[dimension["layer"]]))
         lines.append("    </g>")
 
     lines.extend(["  </g>", "</svg>", ""])
@@ -91,6 +93,101 @@ def render_line(view, entity, layer):
     return render_line_coordinates(entity["id"], x1, y1, x2, y2, layer, indent="      ")
 
 
+def render_dimension(view, dimension, layer):
+    dimension_type = dimension["type"]
+    if dimension_type == "linear":
+        return render_linear_dimension(view, dimension, layer)
+    if dimension_type == "diameter":
+        return render_diameter_dimension(view, dimension, layer)
+    if dimension_type == "radius":
+        return render_radius_dimension(view, dimension, layer)
+    if dimension_type == "hole":
+        return render_hole_dimension(view, dimension, layer)
+    if dimension_type == "center_distance":
+        return render_center_distance_dimension(view, dimension, layer)
+    raise ValueError(f"Unsupported dimension type {dimension_type}.")
+
+
+def render_linear_dimension(view, dimension, layer):
+    start = transform(view, dimension["start_mm"])
+    end = transform(view, dimension["end_mm"])
+    dimension_start = add_offset(start, dimension["offset_mm"])
+    dimension_end = add_offset(end, dimension["offset_mm"])
+    text_position = midpoint(dimension_start, dimension_end)
+    text_position[1] -= 1
+    return [
+        render_line_coordinates(f'{dimension["id"]}-ext-start', start[0], start[1], dimension_start[0], dimension_start[1], layer, indent="      "),
+        render_line_coordinates(f'{dimension["id"]}-ext-end', end[0], end[1], dimension_end[0], dimension_end[1], layer, indent="      "),
+        render_line_coordinates(f'{dimension["id"]}-line', dimension_start[0], dimension_start[1], dimension_end[0], dimension_end[1], layer, indent="      "),
+        render_dimension_text(f'{dimension["id"]}-text', text_position[0], text_position[1], dimension["text"], layer, text_anchor="middle"),
+    ]
+
+
+def render_diameter_dimension(view, dimension, layer):
+    center = transform(view, dimension["center_mm"])
+    end = [
+        center[0] + model_length(view, dimension["diameter_mm"] / 2) + 5,
+        center[1] - 5,
+    ]
+    return [
+        render_line_coordinates(f'{dimension["id"]}-leader', center[0], center[1], end[0], end[1], layer, indent="      "),
+        render_dimension_text(f'{dimension["id"]}-text', end[0] + 2, end[1], dimension["text"], layer),
+    ]
+
+
+def render_radius_dimension(view, dimension, layer):
+    center = transform(view, dimension["center_mm"])
+    point = transform(view, dimension["point_mm"])
+    return [
+        render_line_coordinates(f'{dimension["id"]}-leader', center[0], center[1], point[0], point[1], layer, indent="      "),
+        render_dimension_text(f'{dimension["id"]}-text', point[0] + 2, point[1], dimension["text"], layer),
+    ]
+
+
+def render_hole_dimension(view, dimension, layer):
+    center = transform(view, dimension["center_mm"])
+    cross_size = 2
+    end = [
+        center[0] + model_length(view, dimension["diameter_mm"] / 2) + 7,
+        center[1] - 5,
+    ]
+    return [
+        render_line_coordinates(f'{dimension["id"]}-center-h', center[0] - cross_size, center[1], center[0] + cross_size, center[1], layer, indent="      "),
+        render_line_coordinates(f'{dimension["id"]}-center-v', center[0], center[1] - cross_size, center[0], center[1] + cross_size, layer, indent="      "),
+        render_line_coordinates(f'{dimension["id"]}-leader', center[0], center[1], end[0], end[1], layer, indent="      "),
+        render_dimension_text(f'{dimension["id"]}-text', end[0] + 2, end[1], dimension["text"], layer),
+    ]
+
+
+def render_center_distance_dimension(view, dimension, layer):
+    start = transform(view, dimension["centers_mm"][0])
+    end = transform(view, dimension["centers_mm"][1])
+    dimension_start = add_offset(start, dimension["offset_mm"])
+    dimension_end = add_offset(end, dimension["offset_mm"])
+    text_position = midpoint(dimension_start, dimension_end)
+    text_position[1] -= 1
+    return [
+        render_line_coordinates(f'{dimension["id"]}-ext-start', start[0], start[1], dimension_start[0], dimension_start[1], layer, indent="      "),
+        render_line_coordinates(f'{dimension["id"]}-ext-end', end[0], end[1], dimension_end[0], dimension_end[1], layer, indent="      "),
+        render_line_coordinates(f'{dimension["id"]}-line', dimension_start[0], dimension_start[1], dimension_end[0], dimension_end[1], layer, indent="      "),
+        render_dimension_text(f'{dimension["id"]}-text', text_position[0], text_position[1], dimension["text"], layer, text_anchor="middle"),
+    ]
+
+
+def render_dimension_text(element_id, x, y, text, layer, text_anchor=None):
+    attrs = [
+        f'id="{escape_attr(element_id)}"',
+        f'x="{fmt(x)}"',
+        f'y="{fmt(y)}"',
+        'font-size="3.5"',
+        'font-family="monospace"',
+        f'fill="{layer["fill"]}"',
+    ]
+    if text_anchor:
+        attrs.append(f'text-anchor="{escape_attr(text_anchor)}"')
+    return f'      <text {" ".join(attrs)}>{escape_text(text)}</text>'
+
+
 def render_line_coordinates(element_id, x1, y1, x2, y2, layer, indent):
     attrs = [
         f'id="{escape_attr(element_id)}"',
@@ -112,6 +209,24 @@ def transform(view, point):
     return [
         view["origin_mm"][0] + point[0] * view["scale"],
         view["origin_mm"][1] + point[1] * view["scale"],
+    ]
+
+
+def model_length(view, value):
+    return value * view["scale"]
+
+
+def add_offset(point, offset):
+    return [
+        point[0] + offset[0],
+        point[1] + offset[1],
+    ]
+
+
+def midpoint(start, end):
+    return [
+        (start[0] + end[0]) / 2,
+        (start[1] + end[1]) / 2,
     ]
 
 

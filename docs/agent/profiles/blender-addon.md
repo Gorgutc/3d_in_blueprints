@@ -116,11 +116,37 @@ execution, CAD projection, dimensions, derived exports, or packaging.
   dimensions, standards DB, image assist, DXF/PDF/DWG, and packaging remain
   future iterations.
 
+## I4 Dimensions Contract
+
+I4 adds backend-owned explicit basic dimension annotations without adding CAD
+projection, automatic dimension inference, standards matching, image assist,
+derived exports, or packaging.
+
+- activation: each view may provide `dimensions: []` in `job.json`;
+- supported dimension types: `linear`, `diameter`, `radius`, `hole`, and
+  `center_distance`;
+- DrawingIR: backend adds validated dimension records to each view on the
+  dedicated `dimension` layer;
+- SVG: backend renders deterministic dimension extension lines, leaders,
+  center marks, and text from DrawingIR;
+- diagnostics: unsupported dimension types are skipped and reported through
+  `unsupported_dimension` warnings while supported dimensions continue to
+  render;
+- validation: supported dimension payloads require finite point arrays and
+  positive diameter values where applicable;
+- verification: backend stdlib tests include a dimensioned A4 GOST job fixture
+  and golden SVG;
+- explicit defers: automatic projection-derived dimensions, angular
+  dimensions, ordinate dimensions, tolerances, detailed GOST dimension rules,
+  standards DB, image assist, DXF/PDF/DWG, and packaging remain future
+  iterations.
+
 ## Iteration Boundaries
 
 - I1 owns backend CLI, job schema, DrawingIR, deterministic SVG, and diagnostics.
 - I2 owns Blender bridge code and headless Blender smoke.
 - I3 owns GOST v1 sheet composition.
-- I4-I6 add dimensions, standards matching, and image assist.
+- I4 owns basic explicit dimensions.
+- I5-I6 add standards matching and image assist.
 - I7 owns add-on zip, backend bundle, CI matrix, version stamping, crash logs,
   release docs, and packaging smoke.

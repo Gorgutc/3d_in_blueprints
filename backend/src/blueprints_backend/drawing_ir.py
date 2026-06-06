@@ -1,7 +1,12 @@
-from . import gost
+from . import dimensions, gost
 
 
 LAYER_STYLES = {
+    "dimension": {
+        "fill": "#111111",
+        "stroke": "#111111",
+        "stroke_width": 0.25,
+    },
     "frame": {
         "stroke": "#111111",
         "stroke_width": 0.7,
@@ -30,6 +35,10 @@ def build(job):
         return build_scene_placeholder(job)
 
     sheet, sheet_elements = compose_sheet(job)
+    view_dimensions = [
+        dimensions.compose_view(view)
+        for view in job["views"]
+    ]
     layer_ids = sorted({
         entity["layer"]
         for view in job["views"]
@@ -38,8 +47,12 @@ def build(job):
     } | {
         element["layer"]
         for element in sheet_elements
+    } | {
+        dimension["layer"]
+        for dimension_list in view_dimensions
+        for dimension in dimension_list
     })
-    warnings = unsupported_entity_warnings(job)
+    warnings = unsupported_entity_warnings(job) + dimensions.unsupported_dimension_warnings(job)
 
     return {
         "layers": [
@@ -64,12 +77,13 @@ def build(job):
                     for entity in view["entities"]
                     if entity["type"] == "line"
                 ],
+                "dimensions": view_dimensions[index],
                 "id": view["id"],
                 "label": view.get("label", view["id"]),
                 "origin_mm": view["origin_mm"],
                 "scale": view["scale"],
             }
-            for view in job["views"]
+            for index, view in enumerate(job["views"])
         ],
     }, warnings
 
@@ -91,6 +105,7 @@ def build_scene_placeholder(job):
         "units": "mm",
         "views": [
             {
+                "dimensions": [],
                 "entities": [],
                 "id": "front",
                 "label": "Front",

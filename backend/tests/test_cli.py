@@ -271,6 +271,119 @@ class BackendCliTests(unittest.TestCase):
                 [element["id"] for element in drawing_ir["sheet_elements"][:3]],
             )
 
+    def test_dimensions_job_writes_basic_dimension_annotations(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            shutil.copyfile(FIXTURES / "dimensions_job.json", job_dir / "job.json")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                (FIXTURES / "golden_dimensions_a4.svg").read_text(encoding="utf-8"),
+                (job_dir / "sheet.svg").read_text(encoding="utf-8"),
+            )
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual([], diagnostics["warnings"])
+
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                ["dimension", "frame", "hidden", "text", "thin", "visible"],
+                [layer["id"] for layer in drawing_ir["layers"]],
+            )
+            self.assertEqual(
+                ["linear", "diameter", "radius", "hole", "center_distance"],
+                [dimension["type"] for dimension in drawing_ir["views"][0]["dimensions"]],
+            )
+
+    def test_unsupported_dimension_is_reported_as_warning_and_skipped(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            job["views"][0]["dimensions"].append({
+                "id": "dim-angle-future",
+                "type": "angular",
+            })
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual(
+                [
+                    {
+                        "code": "unsupported_dimension",
+                        "dimension_id": "dim-angle-future",
+                        "message": "Dimension dim-angle-future type angular is not supported in I4 and was skipped.",
+                        "view_id": "front",
+                    }
+                ],
+                diagnostics["warnings"],
+            )
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                ["dim-width", "dim-hole-dia", "dim-left-radius", "dim-hole-note", "dim-hole-centers"],
+                [dimension["id"] for dimension in drawing_ir["views"][0]["dimensions"]],
+            )
+
+    def test_dimension_diameter_and_hole_leaders_follow_view_scale(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            job["views"][0]["scale"] = 2
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            sheet_svg = (job_dir / "sheet.svg").read_text(encoding="utf-8")
+            self.assertIn(
+                '<line id="dim-hole-dia-leader" x1="95" y1="75" x2="112" y2="70"',
+                sheet_svg,
+            )
+            self.assertIn(
+                '<line id="dim-hole-note-leader" x1="125" y1="75" x2="140" y2="70"',
+                sheet_svg,
+            )
+
+    def test_duplicate_view_ids_return_diagnostics_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "dimensions_job.json").read_text(encoding="utf-8"))
+            duplicate_view = json.loads(json.dumps(job["views"][0]))
+            duplicate_view["dimensions"] = [
+                {
+                    "id": "dim-duplicate-view",
+                    "type": "linear",
+                    "start_mm": [0, 0],
+                    "end_mm": [10, 0],
+                }
+            ]
+            job["views"].append(duplicate_view)
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                {
+                    "errors": [
+                        {
+                            "code": "invalid_view",
+                            "message": "view.id values must be unique.",
+                        }
+                    ],
+                    "outputs": {},
+                    "schema_version": "1.0",
+                    "status": "error",
+                    "warnings": [],
+                },
+                json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
+            )
+
 
 def run_backend(job_dir):
     env = os.environ.copy()
