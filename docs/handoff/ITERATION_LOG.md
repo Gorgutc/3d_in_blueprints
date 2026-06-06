@@ -685,3 +685,49 @@ resume_prompt: Finish I3 publication from `codex/i3-gost-composer`: run fresh
   `npm.cmd run codex:ship`, complete `/review` or documented fallback review,
   stage, commit, push, and open the I3 PR.
 ```
+
+```yaml
+iteration_id: I3-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I3 implementation as `ed4c60e Add I3 GOST composer`.
+  - Pushed `codex/i3-gost-composer` to origin.
+  - Opened draft PR #5 for I3.
+  - Preserved I3 defers for projection, dimensions, standards, exports, image
+    assist, and packaging.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I3 GOST composer"
+    result: PASS
+    evidence: Created commit `ed4c60e`; pre-commit `quality:fast` passed.
+  - command: git push -u origin codex/i3-gost-composer
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 750/750, JS 10/10, infra 233/233, backend 8 tests
+      OK, and bridge unit 3 tests OK.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/5
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I3 implementation is committed and pushed for review.
+    - Draft PR #5 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+explicit_defers:
+  - Check remote CI for PR #5.
+  - Review and merge PR #5 before starting I4 Dimensions v1.
+  - I4-I7 product iterations remain pending.
+blockers: []
+risks_or_regressions:
+  - Active Blender 5.2 beta processes were present during I2; I3 local smoke
+    used Blender 5.1.2 explicitly.
+repo_state: branch codex/i3-gost-composer published as draft PR #5
+next_iteration_ready: false
+resume_prompt: Review PR #5 at https://github.com/Gorgutc/3d_in_blueprints/pull/5 and confirm CI. After PR #5 is merged into `main`, start I4 Dimensions v1 from updated `main`.
+```
