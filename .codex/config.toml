@@ -9,7 +9,7 @@ name = "3d_in_blueprints"
 repository = "Gorgutc/3d_in_blueprints"
 branch_prefix = "codex/"
 app_stack = "blender-addon-backend"
-tooling_runtime = "node-for-codex-infra-only"
+tooling_runtime = "node-verification-harness"
 product_scope = "Blender add-on + local standalone backend"
 canonical_output = "svg"
 

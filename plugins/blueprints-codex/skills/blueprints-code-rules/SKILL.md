@@ -7,8 +7,8 @@ description: Use when changing scripts, hooks, validators, or product code insid
 
 ## Overview
 
-Current executable code is infrastructure only until a product iteration adds a
-verified slice.
+Executable code now includes Codex infrastructure and the active I1 backend
+CLI/DrawingIR slice.
 
 ## Rules
 

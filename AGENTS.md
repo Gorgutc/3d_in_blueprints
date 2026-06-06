@@ -9,7 +9,8 @@ file for Codex and other coding agents.
 - The Blender add-on is a thin client. The standalone backend is the source of
   truth for projection, hidden-line extraction, sheet composition, dimensions,
   diagnostics, and exports.
-- The Node package in this repo exists only to verify Codex infrastructure.
+- The Node package in this repo is a verification command harness, not the
+  product runtime.
 - The `blender-addon` profile is active for planning and future product
   iterations. The `windows-exe` profile remains dormant until packaging work
   explicitly activates it.
@@ -72,6 +73,7 @@ Use these infrastructure commands:
 npm run codex:verify-plugin
 npm run check:governance
 npm run check:js
+npm run test:backend
 npm run verify
 npm run quality:fast
 npm run quality:deep
@@ -79,7 +81,7 @@ npm run codex:ship
 ```
 
 `npm run codex:ship` is mandatory before commit, push, PR, or final delivery of
-agent-infrastructure changes.
+agent-infrastructure or product changes.
 
 ## Done When
 

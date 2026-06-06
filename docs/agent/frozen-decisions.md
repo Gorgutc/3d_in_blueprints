@@ -4,7 +4,7 @@ These decisions are active until the current user request explicitly changes
 them:
 
 - Product scope is selected: Blender add-on + local standalone backend.
-- Node tooling is for Codex infrastructure only.
+- Node tooling is a verification command harness, not the product runtime.
 - `blender-addon` profile is active; `windows-exe` profile is dormant.
 - Blender baseline is Blender 5.1.
 - Backend strategy is Python-first with FreeCAD/TechDraw as the MVP geometry

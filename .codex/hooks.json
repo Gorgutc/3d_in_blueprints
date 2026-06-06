@@ -35,7 +35,7 @@
             "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/post-tool-verify.js\"",
             "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"node (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/post-tool-verify.js')\"",
             "timeout": 180,
-            "statusMessage": "Running Codex infrastructure verification"
+            "statusMessage": "Running Codex quality:deep verification"
           }
         ]
       }

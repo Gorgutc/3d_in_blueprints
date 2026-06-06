@@ -9,6 +9,7 @@ const checks = [];
 
 const requiredFiles = [
   'AGENTS.md',
+  '.gitignore',
   'CLAUDE.md',
   'GEMINI.md',
   'DO_NOT_PUSH.md',
@@ -43,6 +44,7 @@ const requiredFiles = [
   'scripts/check-governance.mjs',
   'scripts/check-js-syntax.mjs',
   'scripts/verify-codex-infra.mjs',
+  'scripts/run-python-tests.mjs',
   'scripts/install-hooks.mjs',
 ];
 
@@ -124,7 +126,7 @@ for (const agent of requiredAgents) {
 if (exists('AGENTS.md')) {
   const agents = read('AGENTS.md');
   check('AGENTS declares selected Blender backend scope', /Blender add-on \+ local standalone backend/.test(agents));
-  check('AGENTS keeps Node infrastructure-only', /Node package in this repo exists only to verify Codex infrastructure/.test(agents));
+  check('AGENTS keeps Node out of product runtime', /Node package in this repo is a verification command harness, not the\s+product runtime/.test(agents));
   check('AGENTS declares authority order', /current user request > AGENTS\.md > scripts\/verify-codex-infra\.mjs/.test(agents));
   check('AGENTS requires explicit spawned subagents', /explicit spawned subagents/.test(agents));
   check('AGENTS requires final review fallback', /\/review/.test(agents) && /fallback/.test(agents));
@@ -150,6 +152,7 @@ if (exists('.codex/hooks.json')) {
   }
   check('hooks include three command hooks', commandHookCount === 3, String(commandHookCount));
   check('hooks avoid app/profile commands', !/\b(?:tauri|electron|pyinstaller|nuitka|blender|dotnet|cargo build)\b/i.test(hooksText));
+  check('post-tool status names quality deep verification', /Running Codex quality:deep verification/.test(hooksText));
 }
 
 if (exists('.codex/config.toml')) {
@@ -166,16 +169,21 @@ if (exists('.codex/config.toml')) {
 if (exists('.github/workflows/codex-infra.yml')) {
   const workflow = read('.github/workflows/codex-infra.yml');
   check('CI runs npm ci', /npm ci/.test(workflow));
+  check('CI configures Python for backend tests', /actions\/setup-python@v5/.test(workflow) && /python-version:\s*'3\.12'/.test(workflow));
   check('CI runs codex ship', /npm run codex:ship/.test(workflow));
   check('CI runs npm ci before codex ship', workflow.indexOf('npm ci') < workflow.indexOf('npm run codex:ship'));
+  check('CI configures Python before codex ship', workflow.indexOf('actions/setup-python@v5') < workflow.indexOf('npm run codex:ship'));
 }
 
 if (exists('package.json')) {
   const packageJson = read('package.json');
+  const packageConfig = JSON.parse(packageJson);
+  const scripts = packageConfig.scripts || {};
   for (const command of [
     'codex:verify-plugin',
     'check:governance',
     'check:js',
+    'test:backend',
     'verify',
     'quality:fast',
     'quality:deep',
@@ -184,6 +192,9 @@ if (exists('package.json')) {
   ]) {
     check(`package exposes ${command}`, packageJson.includes(`"${command}"`));
   }
+  check('test:backend runs Python test runner', scripts['test:backend'] === 'node scripts/run-python-tests.mjs');
+  check('quality:deep runs fast gate before backend tests', /npm run quality:fast/.test(scripts['quality:deep'] || '') && /npm run test:backend/.test(scripts['quality:deep'] || ''));
+  check('codex:ship runs quality:deep', scripts['codex:ship'] === 'npm run quality:deep');
 }
 
 if (exists('scripts/install-hooks.mjs')) {
@@ -197,13 +208,21 @@ if (exists('scripts/install-hooks.mjs')) {
 }
 
 if (exists('.codex/hooks/post-tool-verify.js')) {
+  const hookBody = read('.codex/hooks/post-tool-verify.js');
   const hookPath = path.join(root, '.codex/hooks/post-tool-verify.js');
   const infraSample = JSON.stringify({ tool_input: { file_path: 'docs\\\\agent\\\\verification.md' } });
+  const backendSample = JSON.stringify({ tool_input: { file_path: 'backend\\\\src\\\\blueprints_backend\\\\cli.py' } });
   const nonInfraSample = JSON.stringify({ tool_input: { file_path: 'src\\\\app.js' } });
   const hookEnv = { ...process.env, CODEX_INFRA_POST_TOOL_DRY_RUN: '1' };
   const infraResult = spawnSync(process.execPath, [hookPath], {
     cwd: root,
     input: infraSample,
+    encoding: 'utf8',
+    env: hookEnv,
+  });
+  const backendResult = spawnSync(process.execPath, [hookPath], {
+    cwd: root,
+    input: backendSample,
     encoding: 'utf8',
     env: hookEnv,
   });
@@ -214,7 +233,10 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
     env: hookEnv,
   });
   check('post-tool hook detects escaped Windows infra paths', infraResult.status === 0 && /would run/.test(infraResult.stdout));
+  check('post-tool hook detects escaped Windows backend paths', backendResult.status === 0 && /would run/.test(backendResult.stdout));
   check('post-tool hook ignores escaped Windows non-infra paths', nonInfraResult.status === 0 && nonInfraResult.stdout === '');
+  check('post-tool hook runs quality deep on Windows', /npm\.cmd run quality:deep/.test(hookBody));
+  check('post-tool hook runs quality deep on POSIX', /'quality:deep'/.test(hookBody));
 }
 
 for (const script of [
@@ -222,6 +244,7 @@ for (const script of [
   'scripts/check-governance.mjs',
   'scripts/check-js-syntax.mjs',
   'scripts/verify-codex-infra.mjs',
+  'scripts/run-python-tests.mjs',
   'scripts/install-hooks.mjs',
 ]) {
   if (exists(script)) {
