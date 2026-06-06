@@ -1223,3 +1223,51 @@ resume_prompt: Finish I6 publication from `codex/i6-image-assist`: run fresh
   `npm.cmd run codex:ship`, complete `/review` or documented fallback review,
   stage, commit, push, and open the I6 PR.
 ```
+
+```yaml
+iteration_id: I6-pr-publication
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Committed I6 implementation as `07cd775 Add I6 image assist`.
+  - Pushed `codex/i6-image-assist` to origin.
+  - Opened draft PR #8 for I6.
+  - Preserved I6 defers for Blender UI overlay preview, automatic image
+    recognition, scale calibration, absolute dimensions inferred from images,
+    FreeCAD/TechDraw, DXF/PDF/DWG, and packaging.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I6 image assist"
+    result: PASS
+    evidence: Created commit `07cd775`; pre-commit `quality:fast` passed with
+      plugin 214/214, governance 750/750, JS 10/10, and infra 299/299.
+  - command: git push -u origin codex/i6-image-assist
+    result: PASS
+    evidence: Pushed branch and pre-push `codex:ship` passed with plugin
+      214/214, governance 750/750, JS 10/10, infra 299/299, backend 23 tests
+      OK, and bridge unit 3 tests OK.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR https://github.com/Gorgutc/3d_in_blueprints/pull/8
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I6 implementation is committed and pushed for review.
+    - Draft PR #8 targets `main`.
+    - Handoff records the PR publication state.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repo publish workflow.
+explicit_defers:
+  - Check remote CI for PR #8.
+  - Review and merge PR #8 before starting I7 Packaging + Hardening.
+  - I7 remains pending.
+blockers: []
+risks_or_regressions:
+  - Image Assist remains relative and assistive only; future absolute-scale
+    work must add conversion/rendering tests before presenting exact dimensions.
+repo_state: branch codex/i6-image-assist published as draft PR #8
+next_iteration_ready: false
+resume_prompt: Review PR #8 at https://github.com/Gorgutc/3d_in_blueprints/pull/8 and confirm CI. After PR #8 is merged into `main`, start I7 Packaging + Hardening from updated `main`.
+```
