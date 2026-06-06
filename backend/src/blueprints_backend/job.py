@@ -35,6 +35,7 @@ def validate_job(payload, job_dir=None):
     require(is_number(sheet.get("width_mm")) and sheet["width_mm"] > 0, "invalid_sheet", "sheet.width_mm must be positive.")
     require(is_number(sheet.get("height_mm")) and sheet["height_mm"] > 0, "invalid_sheet", "sheet.height_mm must be positive.")
     require(isinstance(sheet.get("format"), str) and sheet["format"], "invalid_sheet", "sheet.format is required.")
+    validate_sheet_standard(sheet)
 
     if "views" in payload:
         views = payload.get("views")
@@ -59,6 +60,25 @@ def validate_scene_source(source, job_dir):
     if job_dir is not None:
         require((job_dir / scene_snapshot).exists(), "missing_source", f"{scene_snapshot} was not found in the job folder.")
         require((job_dir / scene_asset).exists(), "missing_source", f"{scene_asset} was not found in the job folder.")
+
+
+def validate_sheet_standard(sheet):
+    standard = sheet.get("standard")
+    if standard is None:
+        return
+
+    require(standard == "GOST", "invalid_sheet", "sheet.standard must be GOST when provided.")
+    require(sheet["format"] == "A4", "invalid_sheet", "GOST v1 supports A4 sheets only.")
+    require(
+        sheet["width_mm"] == 210 and sheet["height_mm"] == 297,
+        "invalid_sheet",
+        "GOST v1 supports A4 portrait sheets of 210x297 mm only.",
+    )
+    title_block = sheet.get("title_block", {})
+    require(isinstance(title_block, dict), "invalid_sheet", "sheet.title_block must be an object when provided.")
+    for field in ("designation", "scale", "sheet", "sheets", "title"):
+        if field in title_block:
+            require(isinstance(title_block[field], str) and title_block[field], "invalid_sheet", f"sheet.title_block.{field} must be a non-empty string.")
 
 
 def validate_view(view):

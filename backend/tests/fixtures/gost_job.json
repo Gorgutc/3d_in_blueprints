@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "job_id": "gost-bracket",
+  "sheet": {
+    "format": "A4",
+    "standard": "GOST",
+    "width_mm": 210,
+    "height_mm": 297,
+    "title_block": {
+      "designation": "BR-001",
+      "scale": "1:1",
+      "sheet": "1",
+      "sheets": "1",
+      "title": "Bracket"
+    }
+  },
+  "views": [
+    {
+      "id": "front",
+      "label": "Front",
+      "origin_mm": [35, 35],
+      "scale": 1,
+      "entities": [
+        {
+          "id": "edge-top",
+          "type": "line",
+          "layer": "visible",
+          "start_mm": [0, 0],
+          "end_mm": [60, 0]
+        },
+        {
+          "id": "fold-hidden",
+          "type": "line",
+          "layer": "hidden",
+          "start_mm": [10, 12],
+          "end_mm": [50, 12]
+        }
+      ]
+    }
+  ]
+}

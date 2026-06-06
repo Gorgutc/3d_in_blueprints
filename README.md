@@ -9,9 +9,9 @@ technical drawings from 3D scene data.
 - Active profile: `blender-addon`.
 - Dormant profile: `windows-exe`, until packaging work explicitly activates it.
 - Implemented slices: I1 backend CLI + DrawingIR + deterministic SVG +
-  diagnostics; I2 Blender Bridge thin-client smoke.
-- Not implemented yet: FreeCAD/TechDraw execution, GOST composer, dimensions,
-  standards DB, image assist, packaging, DXF/PDF, DWG.
+  diagnostics; I2 Blender Bridge thin-client smoke; I3 GOST Composer v1.
+- Not implemented yet: FreeCAD/TechDraw execution, dimensions, standards DB,
+  image assist, packaging, DXF/PDF, DWG.
 
 ## Backend I1 Contract
 
@@ -50,6 +50,25 @@ I2 provides:
   data-blocks.
 
 I2 does not add add-on packaging, FreeCAD/TechDraw execution, CAD projection, or
+DXF/PDF/DWG exports.
+
+## GOST I3 Composer
+
+The backend now supports an opt-in GOST v1 sheet composer through
+`sheet.standard: "GOST"` in `job.json`.
+
+I3 provides:
+
+- A4 GOST frame margins;
+- backend-owned title block grid and title metadata rendering;
+- DrawingIR `sheet_elements` for frame, title block lines, and text;
+- GOST line layers for frame, thin grid lines, text, visible geometry, and
+  hidden geometry;
+- deterministic golden SVG coverage for GOST output.
+
+The Blender bridge requests GOST sheet composition in its backend job payload
+but still does not synthesize drawing entities. I3 does not add FreeCAD/TechDraw
+projection, dimensions, standards DB, image assist, packaging, or derived
 DXF/PDF/DWG exports.
 
 ## Verification

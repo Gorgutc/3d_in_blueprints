@@ -63,6 +63,8 @@ class BridgeUnitTests(unittest.TestCase):
         )
 
         self.assertNotIn("views", payload)
+        self.assertEqual("GOST", payload["sheet"]["standard"])
+        self.assertEqual("Scene", payload["sheet"]["title_block"]["title"])
         self.assertEqual("scene_snapshot.json", payload["source"]["scene_snapshot"])
         self.assertEqual("scene.obj", payload["source"]["assets"]["scene"])
 

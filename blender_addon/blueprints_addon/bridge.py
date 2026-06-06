@@ -149,6 +149,14 @@ def build_backend_job(snapshot, asset_path):
         "sheet": {
             "format": "A4",
             "height_mm": 297,
+            "standard": "GOST",
+            "title_block": {
+                "designation": f"{snapshot['scene_name']}-bridge",
+                "scale": "1:1",
+                "sheet": "1",
+                "sheets": "1",
+                "title": snapshot["scene_name"],
+            },
             "width_mm": 210,
         },
         "source": {
