@@ -1,4 +1,4 @@
-from . import dimensions, gost, standards
+from . import dimensions, gost, image_assist, standards
 
 
 LAYER_STYLES = {
@@ -53,9 +53,10 @@ def build(job):
         for dimension_list in view_dimensions
         for dimension in dimension_list
     })
-    warnings = unsupported_entity_warnings(job) + dimensions.unsupported_dimension_warnings(job) + standard_warnings
+    assist_ir, assist_warnings = image_assist.compose(job)
+    warnings = unsupported_entity_warnings(job) + dimensions.unsupported_dimension_warnings(job) + standard_warnings + assist_warnings
 
-    return {
+    ir = {
         "layers": [
             {"id": layer_id, **LAYER_STYLES.get(layer_id, default_style())}
             for layer_id in layer_ids
@@ -87,12 +88,16 @@ def build(job):
             }
             for index, view in enumerate(job["views"])
         ],
-    }, warnings
+    }
+    if assist_ir is not None:
+        ir["image_assist"] = assist_ir
+    return ir, warnings
 
 
 def build_scene_placeholder(job):
     sheet, sheet_elements = compose_sheet(job)
-    return {
+    assist_ir, assist_warnings = image_assist.compose(job)
+    ir = {
         "layers": [
             {"id": layer_id, **LAYER_STYLES.get(layer_id, default_style())}
             for layer_id in sorted({
@@ -119,13 +124,16 @@ def build_scene_placeholder(job):
                 "scale": 1,
             }
         ],
-    }, [
+    }
+    if assist_ir is not None:
+        ir["image_assist"] = assist_ir
+    return ir, [
         {
             "code": "projection_pending",
             "message": "SceneSnapshot projection is not implemented in I2; backend emitted an empty placeholder view.",
             "source": job["source"]["scene_snapshot"],
         }
-    ]
+    ] + assist_warnings
 
 
 def compose_sheet(job):

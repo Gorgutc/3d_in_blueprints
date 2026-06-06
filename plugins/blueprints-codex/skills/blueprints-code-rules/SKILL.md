@@ -7,8 +7,8 @@ description: Use when changing scripts, hooks, validators, or product code insid
 
 ## Overview
 
-Executable code now includes Codex infrastructure and the active I1 backend
-CLI/DrawingIR slice.
+Executable code now includes Codex infrastructure plus accepted product slices
+inside the active Blender add-on + local backend scope.
 
 ## Rules
 

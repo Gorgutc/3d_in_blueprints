@@ -1093,3 +1093,133 @@ repo_state: branch codex/i5-standards-db published as draft PR #7
 next_iteration_ready: false
 resume_prompt: Review PR #7 at https://github.com/Gorgutc/3d_in_blueprints/pull/7 and confirm CI. After PR #7 is merged into `main`, start I6 Image Assist from updated `main`.
 ```
+
+```yaml
+iteration_id: I6-image-assist
+status: PASS
+date: 2026-06-06
+scope_completed:
+  - Added backend-owned Image Assist v1 behind optional `image_assist` in
+    `job.json`.
+  - Kept Image Assist in assistive mode only; overlays are hints and not exact
+    engineering geometry.
+  - Added relative contour overlays through `contour.points_rel`.
+  - Added relative circle primitive hints through `primitive_hint`.
+  - Added relative dimension hints through `relative_dimension`.
+  - Added DrawingIR `image_assist` records with `units: "relative"`.
+  - Added deterministic `assist_overlay.svg` output and diagnostics
+    `outputs.image_assist_overlay` registration for jobs that request image
+    assist.
+  - Added validation that rejects absolute `*_mm` image-assist overlay
+    coordinates unless `scale.reference_mm_per_unit` is explicit.
+  - Added diagnostics warnings for unsupported overlay and primitive types,
+    which are skipped while supported overlays still render.
+  - Kept I6 stdlib-only with no PIL, OpenCV, NumPy, scikit-image,
+    FreeCAD/TechDraw, OCCT, or image/CAD subprocess runtime dependencies.
+  - Updated README, Blender profile, verification docs, quality-tooling docs,
+    code/quality skills, artifact policy, infra verifier, fixtures, and tests.
+files_changed:
+  - DO_NOT_PUSH.md
+  - README.md
+  - backend/src/blueprints_backend/cli.py
+  - backend/src/blueprints_backend/diagnostics.py
+  - backend/src/blueprints_backend/drawing_ir.py
+  - backend/src/blueprints_backend/image_assist.py
+  - backend/src/blueprints_backend/job.py
+  - backend/tests/fixtures/golden_image_assist_overlay.svg
+  - backend/tests/fixtures/image_assist_job.json
+  - backend/tests/test_cli.py
+  - docs/agent/profiles/blender-addon.md
+  - docs/agent/quality-tooling.md
+  - docs/agent/verification.md
+  - docs/handoff/ITERATION_LOG.md
+  - plugins/blueprints-codex/skills/blueprints-code-rules/SKILL.md
+  - plugins/blueprints-codex/skills/blueprints-quality-tooling/SKILL.md
+  - scripts/verify-codex-infra.mjs
+commands_run:
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED phase confirmed missing I6 behavior; `assist_overlay.svg`
+      was absent, absolute overlay coordinates were accepted, and unsupported
+      overlays produced no warning.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: GREEN phase passed with 23 backend tests OK and 3 bridge unit
+      tests OK after adding the I6 implementation.
+  - command: explicit spawned subagents
+    result: FAIL
+    evidence: Frozen-decision, instruction-drift, and Blender reviewers
+      reported intermediate blockers for missing docs/verifier/handoff and
+      artifact policy coverage before those files were updated.
+  - command: component reuse reviewer
+    result: FAIL
+    evidence: Reviewer found duplicated SVG/measure helpers in
+      `image_assist.py` and hard-error validation for unsupported future
+      overlays carrying `*_mm` fields.
+  - command: npm.cmd run test:backend
+    result: FAIL
+    evidence: RED regression reproduced the reuse finding; unsupported
+      `texture_map` overlay with `points_mm` returned non-zero instead of
+      warning+skip.
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: Post-fix backend gate passed with 23 backend tests OK and 3
+      bridge unit tests OK after reusing existing formatting helpers and
+      preserving unsupported overlay warning behavior.
+  - command: npm.cmd run verify
+    result: PASS
+    evidence: I6 infra verifier passed with 299/299 checks and 0 FAIL.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Fresh final ship gate passed with plugin 214/214, governance
+      750/750, JS 10/10, infra 299/299, backend 23 tests OK, and bridge unit
+      3 tests OK.
+  - command: /review fallback
+    result: PASS
+    evidence: Slash command is not exposed as a callable tool in this session;
+      performed documented fallback diff/status/scope/artifact review. Diff is
+      limited to I6 backend, fixtures, docs, skills, artifact policy, handoff,
+      and verifier. `git diff --check` reported only local LF-to-CRLF warnings
+      and no whitespace errors. Untracked files are the expected I6 source and
+      fixtures.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - `image_assist.mode` is limited to `assistive`.
+    - Supported I6 overlay types are `contour`, `primitive_hint`, and
+      `relative_dimension`.
+    - Supported I6 primitive hints are circle candidates.
+    - Image Assist records and overlay SVG use relative units.
+    - `assist_overlay.svg` is deterministic and listed in diagnostics only
+      when image assist is requested.
+    - Absolute image-assist overlay coordinates without explicit scale return
+      `invalid_image_assist`.
+    - Unsupported overlay or primitive types emit warnings and are skipped.
+    - Generated backend job outputs, including `assist_overlay.svg`, are
+      excluded from commits outside golden fixtures.
+  failed: []
+accepted_deviations:
+  - I6 is backend-only; Blender UI overlay preview remains deferred because the
+    current acceptance criteria only require backend-owned overlay output.
+explicit_defers:
+  - Blender UI overlay preview and generic extra-output preview loading.
+  - Automatic image recognition, edge detection, template matching, and scale
+    calibration.
+  - Absolute dimensions inferred from images.
+  - FreeCAD/TechDraw projection and hidden-line extraction.
+  - DXF/PDF derived exports and DWG.
+  - Add-on zip, backend bundle, release docs, version stamping, crash logs, CI
+    matrix, and packaging smoke.
+blockers: []
+risks_or_regressions:
+  - I6 overlay coordinates are relative hints only; future UX must not present
+    them as exact dimensions without explicit scale calibration.
+  - `assist_overlay.svg` is a new optional backend output; future Blender
+    preview work needs `test:blender` coverage if it loads that file.
+repo_state: dirty working branch codex/i6-image-assist; final commit, push, and
+  PR publication still pending.
+next_iteration_ready: false
+resume_prompt: Finish I6 publication from `codex/i6-image-assist`: run fresh
+  `npm.cmd run codex:ship`, complete `/review` or documented fallback review,
+  stage, commit, push, and open the I6 PR.
+```

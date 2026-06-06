@@ -1,7 +1,7 @@
 import json
 
 
-def ok(warnings=None, standards=None):
+def ok(warnings=None, standards=None, image_assist=False):
     payload = {
         "errors": [],
         "outputs": {
@@ -13,6 +13,8 @@ def ok(warnings=None, standards=None):
         "status": "ok",
         "warnings": warnings or [],
     }
+    if image_assist:
+        payload["outputs"]["image_assist_overlay"] = "assist_overlay.svg"
     if standards is not None:
         payload["standards"] = standards
     return payload

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1">
+  <title>image-assist-bracket image assist overlay</title>
+  <desc>Assistive relative overlay; absolute dimensions require an explicit scale.</desc>
+  <g id="image-assist-overlay" data-mode="assistive" data-units="relative">
+    <polyline id="outer-contour" points="0.1,0.2 0.85,0.2 0.85,0.7 0.1,0.7 0.1,0.2" fill="none" stroke="#0072ce" stroke-width="0.01" />
+    <circle id="hole-circle-hint" data-primitive="circle" cx="0.48" cy="0.45" r="0.08" fill="none" stroke="#b45f06" stroke-width="0.01" />
+    <line id="width-ratio-line" x1="0.1" y1="0.78" x2="0.85" y2="0.78" fill="none" stroke="#111111" stroke-width="0.008" stroke-linecap="round" />
+    <text id="width-ratio-text" x="0.475" y="0.76" font-size="0.035" font-family="monospace" fill="#111111" text-anchor="middle">1.00 rel</text>
+  </g>
+</svg>

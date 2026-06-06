@@ -642,6 +642,111 @@ class BackendCliTests(unittest.TestCase):
                 json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
             )
 
+    def test_image_assist_job_writes_relative_overlay_svg(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            shutil.copyfile(FIXTURES / "image_assist_job.json", job_dir / "job.json")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                (FIXTURES / "golden_image_assist_overlay.svg").read_text(encoding="utf-8"),
+                (job_dir / "assist_overlay.svg").read_text(encoding="utf-8"),
+            )
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual([], diagnostics["warnings"])
+            self.assertEqual(
+                {
+                    "diagnostics": "diagnostics.json",
+                    "drawing_ir": "drawing_ir.json",
+                    "image_assist_overlay": "assist_overlay.svg",
+                    "svg": "sheet.svg",
+                },
+                diagnostics["outputs"],
+            )
+
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual("assistive", drawing_ir["image_assist"]["mode"])
+            self.assertEqual("relative", drawing_ir["image_assist"]["units"])
+            self.assertEqual(
+                ["outer-contour", "hole-circle-hint", "width-ratio"],
+                [
+                    overlay["id"]
+                    for overlay in drawing_ir["image_assist"]["overlays"]
+                ],
+            )
+
+    def test_image_assist_rejects_absolute_dimensions_without_scale(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "image_assist_job.json").read_text(encoding="utf-8"))
+            job["image_assist"]["overlays"] = [
+                {
+                    "end_mm": [10, 0],
+                    "id": "absolute-width",
+                    "label": "10 mm",
+                    "start_mm": [0, 0],
+                    "type": "relative_dimension",
+                }
+            ]
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                {
+                    "errors": [
+                        {
+                            "code": "invalid_image_assist",
+                            "message": "image_assist overlay absolute coordinates require scale.reference_mm_per_unit.",
+                        }
+                    ],
+                    "outputs": {},
+                    "schema_version": "1.0",
+                    "status": "error",
+                    "warnings": [],
+                },
+                json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
+            )
+
+    def test_unsupported_image_assist_overlay_is_reported_as_warning_and_skipped(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            job = json.loads((FIXTURES / "image_assist_job.json").read_text(encoding="utf-8"))
+            job["image_assist"]["overlays"].append({
+                "id": "texture-map-future",
+                "points_mm": [[0, 0], [10, 0]],
+                "type": "texture_map",
+            })
+            (job_dir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+            result = run_backend(job_dir)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            diagnostics = json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", diagnostics["status"])
+            self.assertEqual(
+                [
+                    {
+                        "code": "unsupported_image_assist_overlay",
+                        "image_assist_overlay_id": "texture-map-future",
+                        "message": "Image assist overlay texture-map-future type texture_map is not supported in I6 and was skipped.",
+                    }
+                ],
+                diagnostics["warnings"],
+            )
+            drawing_ir = json.loads((job_dir / "drawing_ir.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                ["outer-contour", "hole-circle-hint", "width-ratio"],
+                [
+                    overlay["id"]
+                    for overlay in drawing_ir["image_assist"]["overlays"]
+                ],
+            )
+
 
 def run_backend(job_dir):
     env = os.environ.copy()

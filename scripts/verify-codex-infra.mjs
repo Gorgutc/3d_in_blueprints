@@ -50,12 +50,15 @@ const requiredFiles = [
   'backend/src/blueprints_backend/gost.py',
   'backend/src/blueprints_backend/dimensions.py',
   'backend/src/blueprints_backend/standards.py',
+  'backend/src/blueprints_backend/image_assist.py',
   'backend/src/blueprints_backend/data/standards_fasteners.json',
   'backend/tests/fixtures/gost_job.json',
   'backend/tests/fixtures/golden_gost_a4.svg',
   'backend/tests/fixtures/dimensions_job.json',
   'backend/tests/fixtures/golden_dimensions_a4.svg',
   'backend/tests/fixtures/standards_job.json',
+  'backend/tests/fixtures/image_assist_job.json',
+  'backend/tests/fixtures/golden_image_assist_overlay.svg',
   'blender_addon/blueprints_addon/__init__.py',
   'blender_addon/blueprints_addon/bridge.py',
   'blender_addon/blueprints_addon/preview.py',
@@ -295,6 +298,7 @@ if (exists('docs/agent/profiles/blender-addon.md')) {
   check('profile records I3 GOST composer contract', /## I3 GOST Composer Contract/.test(profile));
   check('profile records I4 Dimensions contract', /## I4 Dimensions Contract/.test(profile));
   check('profile records I5 Standards DB contract', /## I5 Standards DB Contract/.test(profile));
+  check('profile records I6 Image Assist contract', /## I6 Image Assist Contract/.test(profile));
   check('profile records SceneSnapshot schema', /SceneSnapshot JSON schema/.test(profile));
   check('profile keeps packaging deferred from I2', /packaging remains I7/.test(profile));
   check('profile keeps projection deferred from I3', /CAD projection/.test(profile) && /future iterations/.test(profile));
@@ -308,6 +312,7 @@ if (exists('README.md')) {
   check('README describes I3 GOST composer slice', /GOST I3 Composer/.test(readme));
   check('README describes I4 dimensions slice', /Dimensions I4 V1/.test(readme));
   check('README describes I5 standards slice', /Standards DB I5 V1/.test(readme));
+  check('README describes I6 image assist slice', /Image Assist I6 V1/.test(readme));
   check('README lists Blender smoke command', /npm run test:blender/.test(readme));
   if (exists('docs/handoff/ITERATION_LOG.md')) {
     const handoff = read('docs/handoff/ITERATION_LOG.md');
@@ -315,6 +320,7 @@ if (exists('README.md')) {
     check('handoff records I3 GOST composer when README claims I3', !/GOST I3 Composer/.test(readme) || /iteration_id:\s*I3-gost-composer/.test(handoff));
     check('handoff records I4 dimensions when README claims I4', !/Dimensions I4 V1/.test(readme) || /iteration_id:\s*I4-dimensions-v1/.test(handoff));
     check('handoff records I5 standards when README claims I5', !/Standards DB I5 V1/.test(readme) || /iteration_id:\s*I5-standards-db/.test(handoff));
+    check('handoff records I6 image assist when README claims I6', !/Image Assist I6 V1/.test(readme) || /iteration_id:\s*I6-image-assist/.test(handoff));
   }
 }
 
@@ -355,6 +361,19 @@ if (exists('backend/src/blueprints_backend/standards.py') && exists('backend/src
   check('Standards DB v1 avoids projection dependencies', !/FreeCAD|TechDraw|OCCT|subprocess/.test(standards));
 }
 
+if (exists('backend/src/blueprints_backend/image_assist.py')) {
+  const imageAssist = read('backend/src/blueprints_backend/image_assist.py');
+  for (const overlayType of ['contour', 'primitive_hint', 'relative_dimension']) {
+    check(`Image Assist v1 supports ${overlayType}`, new RegExp(`"${overlayType}"`).test(imageAssist));
+  }
+  check('Image Assist v1 writes assist overlay SVG', /def render_overlay/.test(imageAssist) && /image-assist-overlay/.test(imageAssist));
+  check('Image Assist v1 emits unsupported overlay warnings', /unsupported_image_assist_overlay/.test(imageAssist));
+  check('Image Assist v1 emits unsupported primitive warnings', /unsupported_image_assist_primitive/.test(imageAssist));
+  check('Image Assist v1 stays relative by default', /"units": "relative"/.test(imageAssist) && /"kind": "relative"/.test(imageAssist));
+  check('Image Assist v1 reuses existing formatting helpers', /svg_writer\.fmt/.test(imageAssist) && /dimensions\.fmt_measure/.test(imageAssist) && !/def fmt\(/.test(imageAssist) && !/def fmt_measure\(/.test(imageAssist));
+  check('Image Assist v1 avoids CV and projection dependencies', !/PIL|cv2|numpy|skimage|FreeCAD|TechDraw|OCCT|subprocess/.test(imageAssist));
+}
+
 if (exists('backend/src/blueprints_backend/job.py')) {
   const job = read('backend/src/blueprints_backend/job.py');
   check('job validation includes view dimensions', /view\.dimensions must be an array/.test(job));
@@ -365,6 +384,9 @@ if (exists('backend/src/blueprints_backend/job.py')) {
   check('job validation includes standards fastener matches', /validate_standards/.test(job) && /standards\.fastener_matches/.test(job));
   check('job validation checks standards nominal diameter', /nominal_diameter_mm must be positive/.test(job));
   check('job validation rejects duplicate standards match ids', /validate_unique_standard_match_ids/.test(job) && /standards\.fastener_matches\.id values must be unique/.test(job));
+  check('job validation includes image assist', /validate_image_assist/.test(job) && /image_assist\.overlays/.test(job));
+  check('job validation rejects absolute image assist coordinates without scale', /absolute coordinates require scale\.reference_mm_per_unit/.test(job));
+  check('job validation rejects duplicate image assist overlay ids', /validate_unique_image_assist_overlay_ids/.test(job) && /image_assist overlay id values must be unique/.test(job));
 }
 
 if (exists('backend/src/blueprints_backend/drawing_ir.py')) {
@@ -377,8 +399,10 @@ if (exists('backend/src/blueprints_backend/drawing_ir.py')) {
 if (exists('backend/src/blueprints_backend/cli.py') && exists('backend/src/blueprints_backend/diagnostics.py')) {
   const cli = read('backend/src/blueprints_backend/cli.py');
   const diagnostics = read('backend/src/blueprints_backend/diagnostics.py');
-  check('diagnostics can include standards matches', /def ok\(warnings=None, standards=None\)/.test(diagnostics) && /payload\["standards"\]/.test(diagnostics));
+  check('diagnostics can include standards matches', /def ok\([^)]*standards=None/.test(diagnostics) && /payload\["standards"\]/.test(diagnostics));
   check('backend CLI forwards standards diagnostics', /ir\.get\("standards"\) if job\.get\("standards"\)/.test(cli));
+  check('diagnostics can include image assist overlay output', /image_assist=False/.test(diagnostics) && /image_assist_overlay/.test(diagnostics));
+  check('backend CLI writes image assist overlay output', /assist_overlay\.svg/.test(cli) && /image_assist\.render_overlay/.test(cli));
 }
 
 if (exists('backend/src/blueprints_backend/svg_writer.py')) {
