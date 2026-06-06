@@ -35,6 +35,9 @@ The gate checks:
 - GOST v1 sheet composition covered by backend golden SVG tests.
 - Dimensions v1 explicit annotation behavior covered by backend golden SVG and
   unsupported-dimension diagnostics tests.
+- Standards DB v1 fastener matching covered by backend fixture tests for
+  source/license metadata, unsupported-family warnings, unmatched-diameter
+  warnings, and unchanged SVG output.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
 

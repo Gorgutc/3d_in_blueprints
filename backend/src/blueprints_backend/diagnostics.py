@@ -1,8 +1,8 @@
 import json
 
 
-def ok(warnings=None):
-    return {
+def ok(warnings=None, standards=None):
+    payload = {
         "errors": [],
         "outputs": {
             "diagnostics": "diagnostics.json",
@@ -13,6 +13,9 @@ def ok(warnings=None):
         "status": "ok",
         "warnings": warnings or [],
     }
+    if standards is not None:
+        payload["standards"] = standards
+    return payload
 
 
 def error(code, message):

@@ -10,9 +10,9 @@ technical drawings from 3D scene data.
 - Dormant profile: `windows-exe`, until packaging work explicitly activates it.
 - Implemented slices: I1 backend CLI + DrawingIR + deterministic SVG +
   diagnostics; I2 Blender Bridge thin-client smoke; I3 GOST Composer v1;
-  I4 Dimensions v1.
-- Not implemented yet: FreeCAD/TechDraw execution, standards DB, image assist,
-  packaging, DXF/PDF, DWG.
+  I4 Dimensions v1; I5 Standards DB v1.
+- Not implemented yet: FreeCAD/TechDraw execution, image assist, packaging,
+  DXF/PDF, DWG.
 
 ## Backend I1 Contract
 
@@ -90,6 +90,27 @@ I4 provides:
 I4 does not infer dimensions from projected geometry, does not add angular or
 ordinate dimensions, tolerances, detailed GOST dimension rules, standards DB,
 image assist, packaging, or derived DXF/PDF/DWG exports.
+
+## Standards DB I5 V1
+
+The backend now supports a narrow, backend-owned fastener standards matcher
+through `standards.fastener_matches[]` in `job.json`.
+
+I5 provides:
+
+- a local stdlib-only starter fastener catalog for `bolt`, `nut`, and `washer`
+  families;
+- explicit source and license metadata for the starter catalog;
+- matcher output in DrawingIR and diagnostics under `standards`;
+- diagnostics warnings for unsupported fastener families and unmatched nominal
+  diameters;
+- backend validation for fastener match request payloads;
+- backend tests covering matches, warnings, and unchanged SVG output.
+
+The starter data is project-authored, non-normative metadata for matcher
+plumbing; no third-party standards table is copied. I5 does not add exact
+standards geometry, automatic fastener detection, BOM generation, image assist,
+packaging, FreeCAD/TechDraw execution, or derived DXF/PDF/DWG exports.
 
 ## Verification
 

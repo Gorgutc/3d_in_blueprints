@@ -22,7 +22,7 @@ def main(argv=None):
         ir, warnings = drawing_ir.build(job)
         write_json(job_dir / "drawing_ir.json", ir)
         (job_dir / "sheet.svg").write_text(svg_writer.render(ir), encoding="utf-8")
-        diagnostics.write(diagnostics_path, diagnostics.ok(warnings))
+        diagnostics.write(diagnostics_path, diagnostics.ok(warnings, ir.get("standards") if job.get("standards") else None))
         return 0
     except JobError as exc:
         return write_error(diagnostics_path, exc.code, exc.message)

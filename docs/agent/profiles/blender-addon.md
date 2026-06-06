@@ -141,12 +141,40 @@ derived exports, or packaging.
   standards DB, image assist, DXF/PDF/DWG, and packaging remain future
   iterations.
 
+## I5 Standards DB Contract
+
+I5 adds backend-owned standards matching without adding CAD projection,
+automatic fastener detection, image assist, exact standards geometry, derived
+exports, or packaging.
+
+- activation: `job.json` may provide `standards.fastener_matches[]`;
+- starter catalog: local stdlib-only project-authored metadata for `bolt`,
+  `nut`, and `washer` families;
+- source control: every catalog entry points to source metadata with explicit
+  license and non-normative authority fields;
+- matcher: requests match by fastener `family` and `nominal_diameter_mm`, then
+  reference a `view_id` and `dimension_id` for traceability;
+- DrawingIR and diagnostics: backend emits matched entries and source metadata
+  under `standards`;
+- diagnostics: unsupported families and unmatched nominal diameters are skipped
+  with warnings while valid matches continue;
+- validation: fastener match requests require ids, view/dimension references,
+  family names, and positive finite nominal diameters;
+- SVG: I5 does not add new standards drawing layout; SVG remains generated from
+  existing DrawingIR sheet, entity, and dimension records;
+- verification: backend stdlib tests include a standards job fixture and
+  warning coverage;
+- explicit defers: normative standards tables, exact fastener geometry,
+  automatic fastener detection, BOM generation, image assist, DXF/PDF/DWG, and
+  packaging remain future iterations.
+
 ## Iteration Boundaries
 
 - I1 owns backend CLI, job schema, DrawingIR, deterministic SVG, and diagnostics.
 - I2 owns Blender bridge code and headless Blender smoke.
 - I3 owns GOST v1 sheet composition.
 - I4 owns basic explicit dimensions.
-- I5-I6 add standards matching and image assist.
+- I5 owns standards DB and fastener matching.
+- I6 owns image assist.
 - I7 owns add-on zip, backend bundle, CI matrix, version stamping, crash logs,
   release docs, and packaging smoke.

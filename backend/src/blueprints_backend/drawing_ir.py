@@ -1,4 +1,4 @@
-from . import dimensions, gost
+from . import dimensions, gost, standards
 
 
 LAYER_STYLES = {
@@ -39,6 +39,7 @@ def build(job):
         dimensions.compose_view(view)
         for view in job["views"]
     ]
+    standard_matches, standard_warnings = standards.match_job(job)
     layer_ids = sorted({
         entity["layer"]
         for view in job["views"]
@@ -52,7 +53,7 @@ def build(job):
         for dimension_list in view_dimensions
         for dimension in dimension_list
     })
-    warnings = unsupported_entity_warnings(job) + dimensions.unsupported_dimension_warnings(job)
+    warnings = unsupported_entity_warnings(job) + dimensions.unsupported_dimension_warnings(job) + standard_warnings
 
     return {
         "layers": [
@@ -62,6 +63,7 @@ def build(job):
         "schema_version": "1.0",
         "sheet": sheet,
         "sheet_elements": sheet_elements,
+        "standards": standard_matches,
         "source_job_id": job["job_id"],
         "units": "mm",
         "views": [
@@ -101,6 +103,10 @@ def build_scene_placeholder(job):
         "schema_version": "1.0",
         "sheet": sheet,
         "sheet_elements": sheet_elements,
+        "standards": {
+            "fastener_matches": [],
+            "sources": [],
+        },
         "source_job_id": job["job_id"],
         "units": "mm",
         "views": [

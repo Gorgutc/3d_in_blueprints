@@ -49,10 +49,13 @@ const requiredFiles = [
   'scripts/install-hooks.mjs',
   'backend/src/blueprints_backend/gost.py',
   'backend/src/blueprints_backend/dimensions.py',
+  'backend/src/blueprints_backend/standards.py',
+  'backend/src/blueprints_backend/data/standards_fasteners.json',
   'backend/tests/fixtures/gost_job.json',
   'backend/tests/fixtures/golden_gost_a4.svg',
   'backend/tests/fixtures/dimensions_job.json',
   'backend/tests/fixtures/golden_dimensions_a4.svg',
+  'backend/tests/fixtures/standards_job.json',
   'blender_addon/blueprints_addon/__init__.py',
   'blender_addon/blueprints_addon/bridge.py',
   'blender_addon/blueprints_addon/preview.py',
@@ -291,10 +294,12 @@ if (exists('docs/agent/profiles/blender-addon.md')) {
   check('profile records I2 Blender bridge contract', /## I2 Blender Bridge Contract/.test(profile));
   check('profile records I3 GOST composer contract', /## I3 GOST Composer Contract/.test(profile));
   check('profile records I4 Dimensions contract', /## I4 Dimensions Contract/.test(profile));
+  check('profile records I5 Standards DB contract', /## I5 Standards DB Contract/.test(profile));
   check('profile records SceneSnapshot schema', /SceneSnapshot JSON schema/.test(profile));
   check('profile keeps packaging deferred from I2', /packaging remains I7/.test(profile));
   check('profile keeps projection deferred from I3', /CAD projection/.test(profile) && /future iterations/.test(profile));
   check('profile keeps standards and image assist deferred from I4', /I4 adds backend-owned explicit basic dimension annotations/.test(profile) && /standards DB, image assist/.test(profile));
+  check('profile keeps image assist deferred from I5', /I5 adds backend-owned standards matching/.test(profile) && /image assist/.test(profile) && /future iterations/.test(profile));
 }
 
 if (exists('README.md')) {
@@ -302,12 +307,14 @@ if (exists('README.md')) {
   check('README describes I2 bridge slice', /I2 Blender Bridge/.test(readme));
   check('README describes I3 GOST composer slice', /GOST I3 Composer/.test(readme));
   check('README describes I4 dimensions slice', /Dimensions I4 V1/.test(readme));
+  check('README describes I5 standards slice', /Standards DB I5 V1/.test(readme));
   check('README lists Blender smoke command', /npm run test:blender/.test(readme));
   if (exists('docs/handoff/ITERATION_LOG.md')) {
     const handoff = read('docs/handoff/ITERATION_LOG.md');
     check('handoff records I2 bridge when README claims I2', !/I2 Blender Bridge/.test(readme) || /iteration_id:\s*I2-blender-bridge/.test(handoff));
     check('handoff records I3 GOST composer when README claims I3', !/GOST I3 Composer/.test(readme) || /iteration_id:\s*I3-gost-composer/.test(handoff));
     check('handoff records I4 dimensions when README claims I4', !/Dimensions I4 V1/.test(readme) || /iteration_id:\s*I4-dimensions-v1/.test(handoff));
+    check('handoff records I5 standards when README claims I5', !/Standards DB I5 V1/.test(readme) || /iteration_id:\s*I5-standards-db/.test(handoff));
   }
 }
 
@@ -332,18 +339,46 @@ if (exists('backend/src/blueprints_backend/dimensions.py')) {
   check('Dimensions v1 avoids projection dependencies', !/FreeCAD|TechDraw|OCCT|subprocess/.test(dimensions));
 }
 
+if (exists('backend/src/blueprints_backend/standards.py') && exists('backend/src/blueprints_backend/data/standards_fasteners.json')) {
+  const standards = read('backend/src/blueprints_backend/standards.py');
+  const standardsData = read('backend/src/blueprints_backend/data/standards_fasteners.json');
+  for (const family of ['bolt', 'nut', 'washer']) {
+    check(`Standards DB v1 supports ${family}`, new RegExp(`"${family}"`).test(standards) && new RegExp(`"family": "${family}"`).test(standardsData));
+  }
+  check('Standards DB v1 records source license', /"sources"/.test(standardsData) && /"license": "Project-authored; no third-party license dependency\."/.test(standardsData));
+  check('Standards DB v1 records non-normative authority', /"authority": "non_normative"/.test(standardsData));
+  check('Standards DB v1 emits unsupported family warnings', /unsupported_standard_family/.test(standards));
+  check('Standards DB v1 emits no-match warnings', /standard_match_not_found/.test(standards));
+  check('Standards DB v1 loads catalog lazily', /if not requests:/.test(standards) && standards.indexOf('if not requests:') < standards.indexOf('catalog = load_catalog()'));
+  check('Standards DB v1 references supported dimensions only', /dimensions\.SUPPORTED_DIMENSION_TYPES/.test(standards));
+  check('Standards DB v1 reuses dimension measure formatting', /dimensions\.fmt_measure/.test(standards) && !/def fmt_measure/.test(standards));
+  check('Standards DB v1 avoids projection dependencies', !/FreeCAD|TechDraw|OCCT|subprocess/.test(standards));
+}
+
 if (exists('backend/src/blueprints_backend/job.py')) {
   const job = read('backend/src/blueprints_backend/job.py');
   check('job validation includes view dimensions', /view\.dimensions must be an array/.test(job));
   check('job validation checks supported dimension payloads', /validate_dimension/.test(job) && /diameter_mm must be positive/.test(job));
   check('job validation rejects duplicate view ids', /validate_unique_view_ids/.test(job) && /view\.id values must be unique/.test(job));
+  check('job validation rejects duplicate dimension ids', /validate_unique_dimension_ids/.test(job) && /dimension\.id values must be unique within a view/.test(job));
   check('job validation uses Dimensions v1 type source of truth', /dimensions\.SUPPORTED_DIMENSION_TYPES/.test(job));
+  check('job validation includes standards fastener matches', /validate_standards/.test(job) && /standards\.fastener_matches/.test(job));
+  check('job validation checks standards nominal diameter', /nominal_diameter_mm must be positive/.test(job));
+  check('job validation rejects duplicate standards match ids', /validate_unique_standard_match_ids/.test(job) && /standards\.fastener_matches\.id values must be unique/.test(job));
 }
 
 if (exists('backend/src/blueprints_backend/drawing_ir.py')) {
   const drawingIr = read('backend/src/blueprints_backend/drawing_ir.py');
   check('DrawingIR assigns dimensions by view order', /for index, view in enumerate\(job\["views"\]\)/.test(drawingIr) && /"dimensions": view_dimensions\[index\]/.test(drawingIr));
   check('DrawingIR avoids id-keyed dimension lookup', !/view_dimensions\s*=\s*\{/.test(drawingIr) && !/view_dimensions\[view\["id"\]\]/.test(drawingIr));
+  check('DrawingIR emits standards matches', /standards\.match_job\(job\)/.test(drawingIr) && /"standards": standard_matches/.test(drawingIr));
+}
+
+if (exists('backend/src/blueprints_backend/cli.py') && exists('backend/src/blueprints_backend/diagnostics.py')) {
+  const cli = read('backend/src/blueprints_backend/cli.py');
+  const diagnostics = read('backend/src/blueprints_backend/diagnostics.py');
+  check('diagnostics can include standards matches', /def ok\(warnings=None, standards=None\)/.test(diagnostics) && /payload\["standards"\]/.test(diagnostics));
+  check('backend CLI forwards standards diagnostics', /ir\.get\("standards"\) if job\.get\("standards"\)/.test(cli));
 }
 
 if (exists('backend/src/blueprints_backend/svg_writer.py')) {
