@@ -6,12 +6,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "backend" / "tests" / "fixtures"
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
+from blueprints_backend import cli as cli_module
 from blueprints_backend import standards as standards_module
 
 
@@ -676,6 +678,38 @@ class BackendCliTests(unittest.TestCase):
                     overlay["id"]
                     for overlay in drawing_ir["image_assist"]["overlays"]
                 ],
+            )
+
+    def test_unexpected_backend_exception_writes_crash_log_and_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir)
+            shutil.copyfile(FIXTURES / "minimal_job.json", job_dir / "job.json")
+
+            with mock.patch.object(cli_module.svg_writer, "render", side_effect=RuntimeError("render exploded")):
+                result = cli_module.main([str(job_dir)])
+
+            self.assertEqual(1, result)
+            crash_log = job_dir / "crash.log"
+            self.assertTrue(crash_log.exists())
+            crash_text = crash_log.read_text(encoding="utf-8")
+            self.assertIn("RuntimeError", crash_text)
+            self.assertIn("render exploded", crash_text)
+            self.assertEqual(
+                {
+                    "errors": [
+                        {
+                            "code": "backend_crash",
+                            "message": "Unexpected backend crash. See crash.log for traceback.",
+                        }
+                    ],
+                    "outputs": {
+                        "crash_log": "crash.log",
+                    },
+                    "schema_version": "1.0",
+                    "status": "error",
+                    "warnings": [],
+                },
+                json.loads((job_dir / "diagnostics.json").read_text(encoding="utf-8")),
             )
 
     def test_image_assist_rejects_absolute_dimensions_without_scale(self):

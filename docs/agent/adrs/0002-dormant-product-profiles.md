@@ -6,8 +6,9 @@ Superseded by ADR 0003 for `blender-addon`. Accepted for `windows-exe`.
 
 ## Decision
 
-Keep `windows-exe` dormant until packaging work explicitly activates it.
-`blender-addon` was dormant under this decision, then activated by ADR 0003.
+Keep `windows-exe` dormant until a future Windows executable packaging request
+explicitly activates it. `blender-addon` was dormant under this decision, then
+activated by ADR 0003.
 
 ## Consequences
 

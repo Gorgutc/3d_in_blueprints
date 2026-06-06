@@ -1,5 +1,6 @@
 import json
 import sys
+import traceback
 from pathlib import Path
 
 from . import diagnostics
@@ -38,6 +39,8 @@ def main(argv=None):
         return write_error(diagnostics_path, exc.code, exc.message)
     except OSError as exc:
         return write_error(diagnostics_path, "filesystem_error", str(exc))
+    except Exception:
+        return write_crash_error(job_dir, diagnostics_path)
 
 
 def write_json(path, payload):
@@ -49,4 +52,20 @@ def write_error(path, code, message):
         diagnostics.write(path, diagnostics.error(code, message))
     except OSError as exc:
         print(f"Failed to write diagnostics: {exc}", file=sys.stderr)
+    return 1
+
+
+def write_crash_error(job_dir, diagnostics_path):
+    try:
+        (job_dir / "crash.log").write_text(traceback.format_exc(), encoding="utf-8")
+        diagnostics.write(
+            diagnostics_path,
+            diagnostics.error(
+                "backend_crash",
+                "Unexpected backend crash. See crash.log for traceback.",
+                outputs={"crash_log": "crash.log"},
+            ),
+        )
+    except OSError as exc:
+        print(f"Failed to write crash diagnostics: {exc}", file=sys.stderr)
     return 1

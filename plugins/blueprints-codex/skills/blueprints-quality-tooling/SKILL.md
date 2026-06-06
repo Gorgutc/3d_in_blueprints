@@ -14,7 +14,11 @@ commands.
 
 - `quality:fast`: plugin, governance, syntax, and infra checks.
 - `test:backend`: Python stdlib tests for backend, GOST composer,
-  Dimensions v1, Standards DB v1, Image Assist v1, and bridge unit behavior.
+  Dimensions v1, Standards DB v1, Image Assist v1, release packaging behavior,
+  and bridge unit behavior.
 - `test:blender`: explicit Blender 5.1 background smoke for I2 bridge changes.
-- `quality:deep`: `quality:fast` plus backend and bridge unit tests.
+- `test:packaging`: stdlib packaging smoke that writes generated artifacts only
+  to a temporary directory.
+- `quality:deep`: `quality:fast` plus backend, bridge unit, and packaging
+  smoke tests.
 - `codex:ship`: final gate before delivery.

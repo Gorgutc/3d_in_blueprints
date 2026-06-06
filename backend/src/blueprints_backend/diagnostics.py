@@ -20,7 +20,7 @@ def ok(warnings=None, standards=None, image_assist=False):
     return payload
 
 
-def error(code, message):
+def error(code, message, outputs=None):
     return {
         "errors": [
             {
@@ -28,7 +28,7 @@ def error(code, message):
                 "message": message,
             }
         ],
-        "outputs": {},
+        "outputs": outputs or {},
         "schema_version": "1.0",
         "status": "error",
         "warnings": [],

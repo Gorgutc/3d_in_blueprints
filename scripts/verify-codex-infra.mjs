@@ -29,6 +29,7 @@ const requiredFiles = [
   'docs/agent/frozen-decisions.md',
   'docs/agent/skill-map.md',
   'docs/agent/migration-inventory.md',
+  'docs/release/packaging.md',
   'docs/agent/profiles/windows-exe.md',
   'docs/agent/profiles/blender-addon.md',
   'docs/agent/adrs/0001-codex-infrastructure.md',
@@ -46,6 +47,8 @@ const requiredFiles = [
   'scripts/verify-codex-infra.mjs',
   'scripts/run-python-tests.mjs',
   'scripts/run-blender-smoke.mjs',
+  'scripts/run-packaging-smoke.mjs',
+  'scripts/package_release.py',
   'scripts/install-hooks.mjs',
   'backend/src/blueprints_backend/gost.py',
   'backend/src/blueprints_backend/dimensions.py',
@@ -59,6 +62,7 @@ const requiredFiles = [
   'backend/tests/fixtures/standards_job.json',
   'backend/tests/fixtures/image_assist_job.json',
   'backend/tests/fixtures/golden_image_assist_overlay.svg',
+  'backend/tests/test_packaging.py',
   'blender_addon/blueprints_addon/__init__.py',
   'blender_addon/blueprints_addon/bridge.py',
   'blender_addon/blueprints_addon/preview.py',
@@ -188,6 +192,8 @@ if (exists('.github/workflows/codex-infra.yml')) {
   const workflow = read('.github/workflows/codex-infra.yml');
   check('CI runs npm ci', /npm ci/.test(workflow));
   check('CI configures Python for backend tests', /actions\/setup-python@v5/.test(workflow) && /python-version:\s*'3\.12'/.test(workflow));
+  check('CI runs Windows and Linux matrix', /matrix:/.test(workflow) && /ubuntu-latest/.test(workflow) && /windows-latest/.test(workflow));
+  check('CI disables matrix fail-fast', /fail-fast:\s*false/.test(workflow));
   check('CI runs codex ship', /npm run codex:ship/.test(workflow));
   check('CI runs npm ci before codex ship', workflow.indexOf('npm ci') < workflow.indexOf('npm run codex:ship'));
   check('CI configures Python before codex ship', workflow.indexOf('actions/setup-python@v5') < workflow.indexOf('npm run codex:ship'));
@@ -203,6 +209,7 @@ if (exists('package.json')) {
     'check:js',
     'test:backend',
     'test:blender',
+    'test:packaging',
     'verify',
     'quality:fast',
     'quality:deep',
@@ -213,7 +220,9 @@ if (exists('package.json')) {
   }
   check('test:backend runs Python test runner', scripts['test:backend'] === 'node scripts/run-python-tests.mjs');
   check('test:blender runs Blender smoke runner', scripts['test:blender'] === 'node scripts/run-blender-smoke.mjs');
+  check('test:packaging runs packaging smoke runner', scripts['test:packaging'] === 'node scripts/run-packaging-smoke.mjs');
   check('quality:deep runs fast gate before backend tests', /npm run quality:fast/.test(scripts['quality:deep'] || '') && /npm run test:backend/.test(scripts['quality:deep'] || ''));
+  check('quality:deep runs packaging smoke after backend tests', /npm run test:backend/.test(scripts['quality:deep'] || '') && /npm run test:packaging/.test(scripts['quality:deep'] || '') && scripts['quality:deep'].indexOf('npm run test:backend') < scripts['quality:deep'].indexOf('npm run test:packaging'));
   check('codex:ship runs quality:deep', scripts['codex:ship'] === 'npm run quality:deep');
 }
 
@@ -222,10 +231,28 @@ if (exists('scripts/run-python-tests.mjs')) {
   check('Python test runner includes Blender bridge unit tests', /blender_addon\/tests/.test(pythonRunner));
 }
 
+if (exists('scripts/run-packaging-smoke.mjs')) {
+  const packagingSmoke = read('scripts/run-packaging-smoke.mjs');
+  check('packaging smoke resolves repo root from script path', /fileURLToPath\(import\.meta\.url\)/.test(packagingSmoke));
+  check('packaging smoke invokes package_release.py smoke mode', /package_release\.py/.test(packagingSmoke) && /--smoke/.test(packagingSmoke));
+  check('packaging smoke hides Windows process windows', /windowsHide:\s*true/.test(packagingSmoke));
+}
+
+if (exists('scripts/package_release.py')) {
+  const packageRelease = read('scripts/package_release.py');
+  check('package release resolves repo root from script path', /Path\(__file__\)\.resolve\(\)\.parents\[1\]/.test(packageRelease));
+  check('package release writes add-on zip', /blender_addon_zip/.test(packageRelease) && /blueprints_addon/.test(packageRelease));
+  check('package release writes backend bundle zip', /backend_bundle_zip/.test(packageRelease) && /blueprints_backend/.test(packageRelease));
+  check('package release writes manifest', /release_manifest\.json/.test(packageRelease));
+  check('package release excludes Python cache files', /__pycache__/.test(packageRelease) && /\.pyc/.test(packageRelease));
+  check('package release uses stdlib zipfile', /import zipfile/.test(packageRelease) && !/pip|poetry|pyinstaller|nuitka|briefcase/i.test(packageRelease));
+}
+
 if (exists('.gitignore')) {
   const gitignore = read('.gitignore');
   check('gitignore blocks bridge job folders', /blueprints-job-\*\//.test(gitignore));
   check('gitignore blocks bridge OBJ GLB outputs', /\*\.obj/.test(gitignore) && /\*\.glb/.test(gitignore) && /\*\.gltf/.test(gitignore));
+  check('gitignore blocks root release packaging artifacts', /^\/dist\/$/m.test(gitignore) && /^\/release\/$/m.test(gitignore) && /\*\.zip/.test(gitignore));
 }
 
 if (exists('scripts/install-hooks.mjs')) {
@@ -242,13 +269,21 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
   const hookBody = read('.codex/hooks/post-tool-verify.js');
   const hookPath = path.join(root, '.codex/hooks/post-tool-verify.js');
   const infraSample = JSON.stringify({ tool_input: { file_path: 'docs\\\\agent\\\\verification.md' } });
+  const releaseDocSample = JSON.stringify({ tool_input: { file_path: 'docs\\\\release\\\\packaging.md' } });
   const backendSample = JSON.stringify({ tool_input: { file_path: 'backend\\\\src\\\\blueprints_backend\\\\cli.py' } });
   const blenderSample = JSON.stringify({ tool_input: { file_path: 'blender_addon\\\\blueprints_addon\\\\bridge.py' } });
+  const packagingScriptSample = JSON.stringify({ tool_input: { file_path: 'scripts\\\\package_release.py' } });
   const nonInfraSample = JSON.stringify({ tool_input: { file_path: 'src\\\\app.js' } });
   const hookEnv = { ...process.env, CODEX_INFRA_POST_TOOL_DRY_RUN: '1' };
   const infraResult = spawnSync(process.execPath, [hookPath], {
     cwd: root,
     input: infraSample,
+    encoding: 'utf8',
+    env: hookEnv,
+  });
+  const releaseDocResult = spawnSync(process.execPath, [hookPath], {
+    cwd: root,
+    input: releaseDocSample,
     encoding: 'utf8',
     env: hookEnv,
   });
@@ -264,6 +299,12 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
     encoding: 'utf8',
     env: hookEnv,
   });
+  const packagingScriptResult = spawnSync(process.execPath, [hookPath], {
+    cwd: root,
+    input: packagingScriptSample,
+    encoding: 'utf8',
+    env: hookEnv,
+  });
   const nonInfraResult = spawnSync(process.execPath, [hookPath], {
     cwd: root,
     input: nonInfraSample,
@@ -271,8 +312,10 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
     env: hookEnv,
   });
   check('post-tool hook detects escaped Windows infra paths', infraResult.status === 0 && /would run/.test(infraResult.stdout));
+  check('post-tool hook detects escaped Windows release doc paths', releaseDocResult.status === 0 && /would run/.test(releaseDocResult.stdout));
   check('post-tool hook detects escaped Windows backend paths', backendResult.status === 0 && /would run/.test(backendResult.stdout));
   check('post-tool hook detects escaped Windows Blender add-on paths', blenderResult.status === 0 && /would run/.test(blenderResult.stdout));
+  check('post-tool hook detects escaped Windows Python script paths', packagingScriptResult.status === 0 && /would run/.test(packagingScriptResult.stdout));
   check('post-tool hook ignores escaped Windows non-infra paths', nonInfraResult.status === 0 && nonInfraResult.stdout === '');
   check('post-tool hook runs quality deep on Windows', /npm\.cmd run quality:deep/.test(hookBody));
   check('post-tool hook runs quality deep on POSIX', /'quality:deep'/.test(hookBody));
@@ -285,6 +328,7 @@ for (const script of [
   'scripts/verify-codex-infra.mjs',
   'scripts/run-python-tests.mjs',
   'scripts/run-blender-smoke.mjs',
+  'scripts/run-packaging-smoke.mjs',
   'scripts/install-hooks.mjs',
 ]) {
   if (exists(script)) {
@@ -299,8 +343,10 @@ if (exists('docs/agent/profiles/blender-addon.md')) {
   check('profile records I4 Dimensions contract', /## I4 Dimensions Contract/.test(profile));
   check('profile records I5 Standards DB contract', /## I5 Standards DB Contract/.test(profile));
   check('profile records I6 Image Assist contract', /## I6 Image Assist Contract/.test(profile));
+  check('profile records I7 Packaging + Hardening contract', /## I7 Packaging \+ Hardening Contract/.test(profile));
   check('profile records SceneSnapshot schema', /SceneSnapshot JSON schema/.test(profile));
   check('profile keeps packaging deferred from I2', /packaging remains I7/.test(profile));
+  check('profile keeps windows-exe dormant for I7', /without activating the dormant Windows executable profile/.test(profile));
   check('profile keeps projection deferred from I3', /CAD projection/.test(profile) && /future iterations/.test(profile));
   check('profile keeps standards and image assist deferred from I4', /I4 adds backend-owned explicit basic dimension annotations/.test(profile) && /standards DB, image assist/.test(profile));
   check('profile keeps image assist deferred from I5', /I5 adds backend-owned standards matching/.test(profile) && /image assist/.test(profile) && /future iterations/.test(profile));
@@ -313,7 +359,9 @@ if (exists('README.md')) {
   check('README describes I4 dimensions slice', /Dimensions I4 V1/.test(readme));
   check('README describes I5 standards slice', /Standards DB I5 V1/.test(readme));
   check('README describes I6 image assist slice', /Image Assist I6 V1/.test(readme));
+  check('README describes I7 packaging hardening slice', /Packaging \+ Hardening I7/.test(readme));
   check('README lists Blender smoke command', /npm run test:blender/.test(readme));
+  check('README lists packaging smoke command', /npm run test:packaging/.test(readme));
   if (exists('docs/handoff/ITERATION_LOG.md')) {
     const handoff = read('docs/handoff/ITERATION_LOG.md');
     check('handoff records I2 bridge when README claims I2', !/I2 Blender Bridge/.test(readme) || /iteration_id:\s*I2-blender-bridge/.test(handoff));
@@ -322,6 +370,12 @@ if (exists('README.md')) {
     check('handoff records I5 standards when README claims I5', !/Standards DB I5 V1/.test(readme) || /iteration_id:\s*I5-standards-db/.test(handoff));
     check('handoff records I6 image assist when README claims I6', !/Image Assist I6 V1/.test(readme) || /iteration_id:\s*I6-image-assist/.test(handoff));
   }
+}
+
+if (exists('docs/agent/skill-map.md')) {
+  const skillMap = read('docs/agent/skill-map.md');
+  check('skill map keeps packaging smoke as command, not skill', /Packaging smoke is a quality command \(`npm run test:packaging`\)/.test(skillMap));
+  check('skill map quality line does not list packaging smoke as skill', !/Quality:[^\n]*packaging smoke/.test(skillMap));
 }
 
 if (exists('blender_addon/blueprints_addon/bridge.py')) {

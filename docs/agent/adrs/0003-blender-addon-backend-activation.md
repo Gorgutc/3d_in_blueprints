@@ -13,7 +13,8 @@ CAD drawing engine.
 ## Decision
 
 Activate the `blender-addon` profile for planning and future product iterations.
-Keep `windows-exe` dormant until packaging work explicitly activates it.
+Keep `windows-exe` dormant until a future Windows executable packaging request
+explicitly activates it.
 
 The selected architecture is:
 

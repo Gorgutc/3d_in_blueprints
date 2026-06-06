@@ -7,11 +7,14 @@ technical drawings from 3D scene data.
 
 - Product scope: Blender add-on thin client + Python-first local backend.
 - Active profile: `blender-addon`.
-- Dormant profile: `windows-exe`, until packaging work explicitly activates it.
+- Dormant profile: `windows-exe`, until a future Windows executable packaging
+  request explicitly activates it.
 - Implemented slices: I1 backend CLI + DrawingIR + deterministic SVG +
   diagnostics; I2 Blender Bridge thin-client smoke; I3 GOST Composer v1;
-  I4 Dimensions v1; I5 Standards DB v1; I6 Image Assist v1.
-- Not implemented yet: FreeCAD/TechDraw execution, packaging, DXF/PDF, DWG.
+  I4 Dimensions v1; I5 Standards DB v1; I6 Image Assist v1; I7 Packaging +
+  Hardening.
+- Not implemented yet: FreeCAD/TechDraw execution, DXF/PDF, DWG, installers,
+  Windows executable packaging.
 
 ## Backend I1 Contract
 
@@ -134,6 +137,38 @@ I6 is stdlib-only and does not add computer-vision dependencies, image
 classification, automatic scale calibration, FreeCAD/TechDraw execution,
 packaging, or derived DXF/PDF/DWG exports.
 
+## Packaging + Hardening I7
+
+The repository now has stdlib-only release packaging for the active Blender
+add-on + backend scope.
+
+I7 provides:
+
+- add-on zip packaging from `blender_addon/blueprints_addon`;
+- backend bundle zip packaging from `backend/src/blueprints_backend`;
+- version-stamped `release_manifest.json`;
+- backend `crash.log` output for unexpected exceptions, referenced from
+  `diagnostics.json`;
+- a Windows/Linux CI matrix for `npm run codex:ship`;
+- packaging docs in `docs/release/packaging.md`;
+- a smoke command that writes generated artifacts only to a temporary folder.
+
+Run the packaging smoke:
+
+```bash
+npm run test:packaging
+```
+
+Create local release artifacts when needed:
+
+```bash
+python scripts/package_release.py --output-dir dist
+```
+
+Generated release folders and zips must not be committed. I7 does not add
+installers, code signing, Windows executable packaging, FreeCAD/TechDraw
+execution, OCCT/C++ builds, or derived DXF/PDF/DWG exports.
+
 ## Verification
 
 Node is used as the repository verification command harness, not as the product
@@ -142,13 +177,14 @@ runtime.
 ```bash
 npm run test:backend
 npm run test:blender
+npm run test:packaging
 npm run codex:ship
 ```
 
 `codex:ship` runs the Codex infrastructure gates plus the stdlib backend and
-bridge unit tests through `quality:deep`. `test:blender` is an explicit local
-Blender 5.1 background smoke; set `BLENDER_EXE` when Blender 5.1 is not on the
-standard Windows install path.
+bridge unit tests plus packaging smoke through `quality:deep`. `test:blender`
+is an explicit local Blender 5.1 background smoke; set `BLENDER_EXE` when
+Blender 5.1 is not on the standard Windows install path.
 
 ## Handoff
 

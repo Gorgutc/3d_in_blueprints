@@ -11,6 +11,7 @@ npm run check:governance
 npm run check:js
 npm run test:backend
 npm run test:blender
+npm run test:packaging
 npm run verify
 npm run quality:fast
 npm run quality:deep
@@ -41,12 +42,15 @@ The gate checks:
 - Image Assist v1 covered by backend fixture tests for relative overlay SVG
   output, diagnostics output registration, unsupported overlay warnings, and
   rejection of absolute overlay coordinates without explicit scale.
+- I7 packaging and hardening covered by backend crash-log diagnostics tests,
+  packaging manifest tests, and `npm run test:packaging` temporary artifact
+  smoke.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
 
 `codex:ship` remains CI-safe and does not load Blender. The explicit
 `test:blender` command loads Blender 5.1 in background mode for bridge
-changes. The gates do not run a browser, compile an executable, package an
-add-on, build installers, invoke FreeCAD/TechDraw, or generate committed
-product artifacts until a product implementation iteration explicitly adds and
-verifies that behavior.
+changes. `test:packaging` packages the add-on and backend only inside a
+temporary directory and does not commit generated artifacts. The gates do not
+run a browser, compile an executable, build installers, invoke
+FreeCAD/TechDraw, or generate committed product artifacts.

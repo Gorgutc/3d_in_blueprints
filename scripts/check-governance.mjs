@@ -53,6 +53,7 @@ const activeFiles = [
   ...listFiles('.codex/agents'),
   ...listFiles('plugins/blueprints-codex'),
   ...listFiles('docs/agent').filter((file) => !file.includes('/migration-inventory.md')),
+  ...listFiles('docs/release'),
   ...listFiles('scripts'),
   'package.json',
   'lefthook.yml',

@@ -12,8 +12,8 @@ file for Codex and other coding agents.
 - The Node package in this repo is a verification command harness, not the
   product runtime.
 - The `blender-addon` profile is active for planning and future product
-  iterations. The `windows-exe` profile remains dormant until packaging work
-  explicitly activates it.
+  iterations. The `windows-exe` profile remains dormant until a future Windows
+  executable packaging request explicitly activates it.
 - Do not create product source code, runtime dependencies, installers, browser
   gates, Blender packages, or generated artifacts outside the current accepted
   iteration scope.
@@ -75,6 +75,7 @@ npm run check:governance
 npm run check:js
 npm run test:backend
 npm run test:blender
+npm run test:packaging
 npm run verify
 npm run quality:fast
 npm run quality:deep
@@ -84,6 +85,8 @@ npm run codex:ship
 `npm run codex:ship` is mandatory before commit, push, PR, or final delivery of
 agent-infrastructure or product changes. `npm run test:blender` is required for
 Blender add-on bridge changes when Blender 5.1 is available locally.
+`npm run test:packaging` is required for release packaging changes and is part
+of `quality:deep`.
 
 ## Done When
 
