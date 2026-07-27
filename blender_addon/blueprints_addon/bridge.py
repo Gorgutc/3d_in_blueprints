@@ -304,7 +304,10 @@ def run_backend(job_dir, *, backend_python=None, backend_src_path=None, timeout_
 
 
 def ensure_backend_outputs(job_dir, returncode, expected_job_id):
-    job_dir = Path(job_dir).expanduser().resolve()
+    # Keep the caller's absolute path spelling for approved_outputs. On Windows,
+    # resolve() may rewrite a long temp path to an equivalent 8.3 short name;
+    # require_regular_output() still resolves paths separately for confinement.
+    job_dir = Path(job_dir).expanduser().absolute()
     diagnostics_path = job_dir / "diagnostics.json"
     if not diagnostics_path.exists() and not diagnostics_path.is_symlink():
         return backend_output_failure(

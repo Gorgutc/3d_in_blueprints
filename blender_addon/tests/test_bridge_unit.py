@@ -233,6 +233,35 @@ class BridgeUnitTests(unittest.TestCase):
                 state.approved_outputs,
             )
 
+    def test_approved_outputs_preserve_logical_path_when_resolve_uses_an_alias(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_dir = Path(temp_dir).absolute()
+            self.write_success_outputs(job_dir)
+            real_resolve = Path.resolve
+            resolved_job_dir = real_resolve(job_dir, strict=True)
+            physical_alias = resolved_job_dir.parent / "RUNNER~1" / resolved_job_dir.name
+
+            def aliased_resolve(path, strict=False):
+                resolved = real_resolve(path, strict=strict)
+                try:
+                    relative = resolved.relative_to(resolved_job_dir)
+                except ValueError:
+                    return resolved
+                return physical_alias / relative
+
+            with mock.patch.object(Path, "resolve", autospec=True, side_effect=aliased_resolve):
+                state = bridge.ensure_backend_outputs(job_dir, 0, "job")
+
+            self.assertEqual(0, state.returncode)
+            self.assertEqual(
+                {
+                    "diagnostics": job_dir / "diagnostics.json",
+                    "drawing_ir": job_dir / "drawing_ir.json",
+                    "svg": job_dir / "sheet.svg",
+                },
+                state.approved_outputs,
+            )
+
     def test_diagnostics_requires_strict_utf8_json_object(self):
         invalid_payloads = {
             "empty": b"",
