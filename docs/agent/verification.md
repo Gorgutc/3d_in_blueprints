@@ -45,8 +45,34 @@ The gate checks:
 - I7 packaging and hardening covered by backend crash-log diagnostics tests,
   packaging manifest tests, and `npm run test:packaging` temporary artifact
   smoke.
+- I8 backend negative contracts in `backend/tests/test_job_contracts.py` cover
+  normalized POSIX-relative source paths; POSIX/Windows rooted, drive-relative,
+  UNC, traversal, backslash-relative, and non-normalized rejection; missing,
+  directory, empty, symlink, and resolved-escape sources; SceneSnapshot
+  UTF-8/JSON/object/schema validation; entity-ID and layer rules; and XML
+  1.0-invalid text rejection.
+- I8 SVG-ID cases in `backend/tests/test_svg_ids.py` cover injective namespaces
+  across views/entities/dimensions/sheet elements, Image Assist part-collision
+  resistance, logical-ID trace attributes, deterministic output, invalid XML
+  text rejection, and preservation of legacy non-ID SVG structure.
+- I8 bridge and operator unit cases cover explicit Backend Source package
+  entrypoints, installed add-on blank-configuration failure, trusted backend
+  cwd plus an absolute job argument, malformed/empty/partial backend outputs,
+  warning-only operator completion, `projection_pending` without false success,
+  and stale Text data-block invalidation.
+- I8 packaging smoke extracts the backend ZIP outside the checkout, clears
+  inherited `PYTHONPATH`, runs `python -m blueprints_backend` from the extracted
+  backend root, and validates its three declared outputs.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
+- The I8 Blender 5.1 smoke includes both source and installed-package cases. Its
+  blank-configuration case enables the real installed add-on with default
+  preferences and requires `backend_not_configured`, `CANCELLED`, and zero
+  job/export side effects. Its configured case extracts the backend ZIP, sets
+  Backend Source to the folder containing `blueprints_backend`, runs the real
+  operator to completion, and requires diagnostics plus raw SVG source in the
+  compatible `Blueprints SVG Preview` Text block. The expected
+  `projection_pending` result is a warning and never `Blueprint generated`.
 
 `codex:ship` remains CI-safe and does not load Blender. The explicit
 `test:blender` command loads Blender 5.1 in background mode for bridge

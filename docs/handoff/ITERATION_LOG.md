@@ -1458,3 +1458,226 @@ resume_prompt: Review PR #9 at https://github.com/Gorgutc/3d_in_blueprints/pull/
   and confirm CI. After PR #9 is merged into `main`, continue from updated
   `main` with the next approved iteration.
 ```
+
+```yaml
+iteration_id: I8-runtime-contract-hardening
+status: PASS
+date: 2026-07-27
+scope_completed:
+  - Hardened the Blender add-on/backend launch boundary around an explicitly
+    configured two-ZIP installation while retaining source-checkout discovery.
+  - Added fail-closed diagnostics and approved-output validation, trusted
+    backend cwd, an absolute job argument, and stale-preview invalidation.
+  - Added a bpy-independent operator flow with controlled cancellation,
+    warning, error, and success classification.
+  - Hardened portable job source paths, SceneSnapshot validation, stroked-layer
+    capability checks, per-view entity IDs, XML text rejection, and injective
+    namespaced SVG DOM IDs with traceability attributes.
+  - Extended backend, add-on, packaging, and installed Blender tests, refreshed
+    SVG goldens, and documented the I8 runtime/install contract.
+  - Updated versions to add-on `0.2.1` and backend `0.1.1`; retained Node
+    harness `0.1.0` and schemas `1.0`.
+files_changed:
+  - README.md
+  - backend/src/blueprints_backend
+  - backend/tests
+  - blender_addon/blueprints_addon
+  - blender_addon/tests
+  - docs/agent/profiles/blender-addon.md
+  - docs/agent/verification.md
+  - docs/release/packaging.md
+  - docs/handoff/ITERATION_LOG.md
+  - scripts/package_release.py
+  - scripts/run-blender-smoke.mjs
+  - scripts/verify-codex-infra.mjs
+commands_run:
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: Backend `51 tests OK` with 4 privilege-dependent symlink skips;
+      add-on `35 tests OK` with 2 privilege-dependent symlink skips.
+  - command: npm.cmd run test:packaging
+    result: PASS
+    evidence: Both ZIP artifacts were built; the extracted backend passed a
+      clean-PYTHONPATH manual-view runtime smoke outside the checkout.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Blender 5.1.2 passed the source smoke and a separate isolated
+      installed-add-on/two-ZIP smoke for blank and configured preferences.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Plugin 214/214, governance 774/774, JS 11/11, infra 350/350,
+      backend and add-on suites, and packaging smoke all passed.
+  - command: git diff --check
+    result: PASS
+    evidence: No whitespace errors were found in the I8 working-tree diff.
+  - command: independent delegated and fallback reviews
+    result: PASS
+    evidence: Code, deadwood, reuse, runtime, Blender, visual, frozen-decision,
+      instruction, verification, and lookahead coverage found no I8 P0/P1.
+artifacts_generated:
+  - Task-scoped visual evidence was retained outside the repository under
+    `.codex/visualizations/.../i8-runtime-contract-hardening-final`.
+  - ZIPs, OBJ input, job outputs, isolated Blender preferences, and
+    intermediate screenshots were temporary or ignored and were not added to
+    the repository; the five final PNGs remain in the external evidence set.
+acceptance_gates:
+  passed:
+    - Blank packaged Backend Source cancels cleanly before job/export creation.
+    - An extracted backend ZIP runs from its validated source directory with
+      blank Backend Python falling back to Blender's Python executable.
+    - Diagnostics and outputs fail closed and preview consumes approved paths
+      only.
+    - `projection_pending` produces `FINISHED + WARNING` and never emits the
+      ordinary `Blueprint generated` success message.
+    - Installed add-on provenance points to an isolated Blender user directory,
+      not the source checkout.
+    - Visual evidence shows installed preferences and panel, the unconfigured
+      error, the projection warning, and current Diagnostics Text.
+  failed: []
+accepted_deviations:
+  - Four backend and two add-on symlink tests skip on this Windows account with
+    WinError 1314; Linux CI or a privileged Windows account must exercise them.
+  - I8 has a scoped product/runtime PASS, while repository-wide instruction and
+    tooling drift remains FAIL and is assigned to the separate P0b iteration.
+explicit_defers:
+  - P0b repair of stale agents/skills, historical-handoff wording, hook routing,
+    exact command closure, and frozen-decision parity.
+  - FreeCAD/TechDraw projection, hidden-line extraction, and provider policy.
+  - Atomic multi-file publication, global backend import/probe, hashes, hostile
+    TOCTOU, deeper DrawingIR/SVG semantic validation, and process-tree policy.
+  - GLB packaged-smoke expansion, unified version policy, Windows executable
+    packaging, installers, signing, and public release publication.
+blockers: []
+risks_or_regressions:
+  - Visual evidence is tied to base Git commit
+    `5de937f9b5783e144a0aa147a483ae6be810d0ff` plus the current uncommitted I8
+    working-tree diff because commit, push, and PR publication were not
+    authorized.
+  - The repo-wide JS syntax checker may omit unreadable traversal failures; this
+    known P0b defect does not invalidate the independently executed I8 gates.
+repo_state: dirty working branch codex/i8-runtime-contract-hardening; commit,
+  push, PR, and release publication are not authorized in this session.
+next_iteration_ready: false
+resume_prompt: Review the I8 diff and visual evidence. If accepted, explicitly
+  authorize commit, push, and draft PR publication; schedule P0b separately.
+```
+
+```yaml
+iteration_id: I8-pr-publication
+status: PASS
+date: 2026-07-27
+scope_completed:
+  - Committed I8 implementation as `5ac7e5a Add I8 runtime contract hardening`.
+  - Pushed `codex/i8-runtime-contract-hardening` to origin.
+  - Opened draft PR #10 for I8 against `main`.
+  - Preserved the separate P0b and all product/runtime/distribution defers.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I8 runtime contract hardening"
+    result: PASS
+    evidence: Created commit `5ac7e5aa54c6a3c952facc5af27e3466a2e79bf3`
+      from the exact 31-file I8 allowlist.
+  - command: git push -u origin codex/i8-runtime-contract-hardening
+    result: PASS
+    evidence: Published the branch and configured its upstream without force.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR
+      https://github.com/Gorgutc/3d_in_blueprints/pull/10 targeting `main`.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Plugin 214/214, governance 774/774, JS 11/11, infra 350/350,
+      backend 51 OK with 4 skips, add-on 35 OK with 2 skips, and packaging
+      smoke with two artifacts.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Blender 5.1.2 source and isolated installed two-ZIP smokes passed.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I8 implementation is committed and pushed for review.
+    - Draft PR #10 targets `main` from the intended I8 branch.
+    - Publication record preserves actual commit, branch, PR, and verification.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repository publish workflow.
+  - Six symlink tests remain skipped on this unprivileged Windows account and
+    require Linux CI or privileged Windows coverage.
+explicit_defers:
+  - Check remote CI and review draft PR #10 before merge.
+  - Complete the separate P0b instruction/tooling hardening iteration.
+  - FreeCAD/TechDraw projection, HLR, atomic publication, deeper semantics,
+    GLB packaged coverage, Windows executable packaging, signing, and public
+    release remain deferred.
+blockers: []
+risks_or_regressions:
+  - The current repository gates still do not prove complete JS discovery when
+    a traversal/stat/read operation fails; P0b owns that fail-open checker debt.
+repo_state: branch codex/i8-runtime-contract-hardening published as draft PR #10
+next_iteration_ready: false
+resume_prompt: Review draft PR #10 and remote CI. Merge only after approval;
+  schedule P0b separately before starting the provider/projection iteration.
+```
+
+```yaml
+iteration_id: I8-windows-ci-path-alias-fix
+status: PASS
+date: 2026-07-27
+scope_completed:
+  - Diagnosed the first draft-PR Windows CI failure as a logical-path spelling
+    mismatch between the long temporary path and its Windows 8.3 alias.
+  - Preserved approved-output paths with caller-visible absolute spelling while
+    retaining strict resolved-path confinement for security validation.
+  - Added a regression test for approved outputs whose resolved path uses an
+    alias, committed the fix as `98eeb37 Fix Windows approved output paths`,
+    and pushed it to draft PR #10.
+files_changed:
+  - blender_addon/blueprints_addon/bridge.py
+  - blender_addon/tests/test_bridge_unit.py
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: Backend `51 tests OK` with 4 privilege-dependent symlink skips;
+      add-on `36 tests OK` with 2 privilege-dependent symlink skips.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Plugin 214/214, governance 774/774, JS 11/11, infra 350/350,
+      backend and add-on suites, and packaging smoke all passed.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Blender 5.1.2 source and isolated installed two-ZIP smokes passed.
+  - command: GitHub Actions run 30253120977
+    result: PASS
+    evidence: Both `codex-infra (ubuntu-latest)` and
+      `codex-infra (windows-latest)` completed successfully for `98eeb37`.
+  - command: independent focused code and verification reviews
+    result: PASS
+    evidence: Reviewers confirmed logical path preservation without weakening
+      regular-file, non-symlink, or resolved-root confinement checks.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - The Windows runner no longer rewrites approved-output paths into an 8.3
+      alias that violates the public bridge-result contract.
+    - Physical output validation remains fail closed through strict resolution
+      inside the job root.
+    - Draft PR #10 has green Ubuntu and Windows CI on the runtime fix commit.
+  failed: []
+accepted_deviations:
+  - Six privilege-dependent symlink tests remain skipped on this Windows
+    account; hosted Ubuntu CI exercises the portable suite.
+explicit_defers:
+  - Merge remains owner-controlled; PR #10 stays draft.
+  - P0b instruction/tooling hardening and all previously recorded product and
+    distribution defers remain open.
+blockers: []
+risks_or_regressions:
+  - Hostile TOCTOU between output validation and later consumption remains an
+    explicit post-I8 hardening item.
+repo_state: draft PR #10 updated through `98eeb37`; Ubuntu and Windows CI pass
+next_iteration_ready: false
+resume_prompt: Review final-head CI and draft PR #10. Merge only after explicit
+  owner approval; schedule P0b separately after I8 closeout.
+```

@@ -1,18 +1,53 @@
 import json
+import math
 import os
+import stat
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from pathlib import Path
 
 
 SCENE_SNAPSHOT_SCHEMA_VERSION = "1.0"
-REQUIRED_BACKEND_OUTPUTS = ("diagnostics.json", "drawing_ir.json", "sheet.svg")
+BACKEND_NOT_CONFIGURED_MESSAGE = (
+    "Backend Source is not configured. Extract the backend ZIP and select the folder "
+    "containing blueprints_backend in Add-on Preferences."
+)
+SUCCESS_OUTPUT_MAPPING = {
+    "diagnostics": "diagnostics.json",
+    "drawing_ir": "drawing_ir.json",
+    "svg": "sheet.svg",
+}
+OPTIONAL_SUCCESS_OUTPUT_MAPPING = {
+    "image_assist_overlay": "assist_overlay.svg",
+}
+ERROR_OUTPUT_MAPPING = {
+    "crash_log": "crash.log",
+}
 
 
 class BridgeError(RuntimeError):
     pass
+
+
+class BridgeConfigurationError(BridgeError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class _StrictDataError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class BackendOutputState:
+    diagnostics: dict
+    returncode: int
+    approved_outputs: dict[str, Path]
 
 
 @dataclass(frozen=True)
@@ -23,6 +58,7 @@ class BridgeResult:
     stdout: str
     stderr: str
     asset_path: Path
+    approved_outputs: dict[str, Path]
 
 
 def run_bridge(
@@ -47,24 +83,66 @@ def run_bridge(
         backend_src_path=backend_src_path,
         timeout_seconds=timeout_seconds,
     )
-    diagnostics = ensure_backend_outputs(job_dir, backend.returncode)
-    returncode = backend.returncode
-    if diagnostics.get("status") == "error" and returncode == 0:
-        returncode = 1
+    output_state = ensure_backend_outputs(
+        job_dir,
+        backend.returncode,
+        expected_job_id=backend_job["job_id"],
+    )
     return BridgeResult(
         job_dir=job_dir,
-        returncode=returncode,
-        diagnostics=diagnostics,
+        returncode=output_state.returncode,
+        diagnostics=output_state.diagnostics,
         stdout=backend.stdout,
         stderr=backend.stderr,
         asset_path=asset_path,
+        approved_outputs=output_state.approved_outputs,
+    )
+
+
+def resolve_backend_source(configured_path, *, bridge_path=__file__):
+    if configured_path is not None and str(configured_path).strip():
+        try:
+            source = Path(configured_path).expanduser().resolve()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            raise backend_not_configured() from None
+        if is_backend_source(source):
+            return source
+        raise backend_not_configured()
+
+    try:
+        repository_root = find_repo_root(bridge_path)
+    except BridgeError:
+        raise backend_not_configured() from None
+    source = (repository_root / "backend" / "src").resolve()
+    if not is_backend_source(source):
+        raise backend_not_configured()
+    return source
+
+
+def backend_not_configured():
+    return BridgeConfigurationError(
+        "backend_not_configured",
+        BACKEND_NOT_CONFIGURED_MESSAGE,
+    )
+
+
+def is_backend_source(source):
+    package = source / "blueprints_backend"
+    return (
+        source.is_dir()
+        and package.is_dir()
+        and not package.is_symlink()
+        and is_regular_file(package / "__init__.py", allow_empty=True)
+        and is_regular_file(package / "__main__.py", allow_empty=True)
     )
 
 
 def find_repo_root(start_path):
     current = Path(start_path).resolve()
+    if current.is_file():
+        current = current.parent
     for candidate in (current, *current.parents):
-        if (candidate / "backend" / "src" / "blueprints_backend").exists():
+        if is_backend_source(candidate / "backend" / "src"):
             return candidate
     raise BridgeError(f"Could not find repository root from {start_path}.")
 
@@ -169,19 +247,24 @@ def build_backend_job(snapshot, asset_path):
 
 
 def run_backend(job_dir, *, backend_python=None, backend_src_path=None, timeout_seconds=30):
-    python_executable = backend_python or sys.executable
+    job_dir = Path(job_dir).expanduser().resolve()
+    backend_src_path = resolve_backend_source(backend_src_path)
+    python_executable = (
+        sys.executable
+        if backend_python is None or not str(backend_python).strip()
+        else str(backend_python)
+    )
     command = [python_executable, "-m", "blueprints_backend", str(job_dir)]
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    if backend_src_path:
-        env["PYTHONPATH"] = str(backend_src_path) + (
-            os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
-        )
+    env["PYTHONPATH"] = str(backend_src_path) + (
+        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
+    )
 
     try:
         return subprocess.run(
             command,
-            cwd=str(job_dir),
+            cwd=str(backend_src_path),
             env=env,
             capture_output=True,
             text=True,
@@ -201,7 +284,7 @@ def run_backend(job_dir, *, backend_python=None, backend_src_path=None, timeout_
             "status": "error",
             "warnings": [],
         }
-        write_json(job_dir / "diagnostics.json", diagnostics)
+        replace_diagnostics_file(job_dir / "diagnostics.json", diagnostics)
         return subprocess.CompletedProcess(command, 124, exc.stdout or "", exc.stderr or "")
     except OSError as exc:
         diagnostics = {
@@ -216,45 +299,255 @@ def run_backend(job_dir, *, backend_python=None, backend_src_path=None, timeout_
             "status": "error",
             "warnings": [],
         }
-        write_json(job_dir / "diagnostics.json", diagnostics)
+        replace_diagnostics_file(job_dir / "diagnostics.json", diagnostics)
         return subprocess.CompletedProcess(command, 127, "", str(exc))
 
 
-def ensure_backend_outputs(job_dir, returncode):
+def ensure_backend_outputs(job_dir, returncode, expected_job_id):
+    # Keep the caller's absolute path spelling for approved_outputs. On Windows,
+    # resolve() may rewrite a long temp path to an equivalent 8.3 short name;
+    # require_regular_output() still resolves paths separately for confinement.
+    job_dir = Path(job_dir).expanduser().absolute()
     diagnostics_path = job_dir / "diagnostics.json"
-    if not diagnostics_path.exists():
-        diagnostics = bridge_error_diagnostics(
+    if not diagnostics_path.exists() and not diagnostics_path.is_symlink():
+        return backend_output_failure(
+            diagnostics_path,
+            returncode,
             "backend_missing_diagnostics",
             "Backend did not write diagnostics.json.",
         )
-        write_json(diagnostics_path, diagnostics)
-        return diagnostics
 
     try:
-        diagnostics = read_json(diagnostics_path)
-    except json.JSONDecodeError as exc:
-        diagnostics = bridge_error_diagnostics(
+        require_regular_output(diagnostics_path, job_dir)
+        diagnostics = read_strict_json_object(diagnostics_path)
+        validate_diagnostics(diagnostics)
+    except Exception:
+        return backend_output_failure(
+            diagnostics_path,
+            returncode,
             "backend_invalid_diagnostics",
-            f"Backend diagnostics.json is not valid JSON: {exc.msg}.",
+            "Backend diagnostics.json is invalid or does not match schema 1.0.",
         )
-        write_json(diagnostics_path, diagnostics)
-        return diagnostics
 
-    if returncode == 0:
-        missing = [
-            name
-            for name in REQUIRED_BACKEND_OUTPUTS
-            if not (job_dir / name).exists()
-        ]
-        if missing:
-            diagnostics = bridge_error_diagnostics(
-                "backend_missing_outputs",
-                f"Backend exited successfully but did not write: {', '.join(missing)}.",
-            )
-            write_json(diagnostics_path, diagnostics)
-            return diagnostics
+    status = diagnostics["status"]
+    if (status == "ok") != (returncode == 0):
+        return backend_output_failure(
+            diagnostics_path,
+            returncode,
+            "backend_status_mismatch",
+            "Backend process exit code does not match diagnostics status.",
+        )
 
-    return diagnostics
+    try:
+        output_paths = validate_output_mapping(job_dir, status, diagnostics["outputs"])
+    except _StrictDataError:
+        return backend_output_failure(
+            diagnostics_path,
+            returncode,
+            "backend_invalid_outputs",
+            "Backend outputs do not match the approved output contract.",
+        )
+
+    missing = [
+        output_path.name
+        for output_path in output_paths.values()
+        if not output_path.exists() and not output_path.is_symlink()
+    ]
+    if missing:
+        return backend_output_failure(
+            diagnostics_path,
+            returncode,
+            "backend_missing_outputs",
+            f"Backend did not write declared outputs: {', '.join(sorted(missing))}.",
+        )
+
+    try:
+        for output_path in output_paths.values():
+            require_regular_output(output_path, job_dir)
+        if status == "ok":
+            validate_success_outputs(output_paths, expected_job_id)
+        elif "crash_log" in output_paths:
+            output_paths["crash_log"].read_bytes().decode("utf-8")
+    except Exception:
+        return backend_output_failure(
+            diagnostics_path,
+            returncode,
+            "backend_invalid_outputs",
+            "Backend outputs are invalid or do not match their declared schemas.",
+        )
+
+    approved_outputs = {"diagnostics": diagnostics_path}
+    approved_outputs.update(output_paths)
+    return BackendOutputState(
+        diagnostics=diagnostics,
+        returncode=returncode,
+        approved_outputs=approved_outputs,
+    )
+
+
+def validate_diagnostics(diagnostics):
+    if diagnostics.get("schema_version") != "1.0":
+        raise _StrictDataError("Unsupported diagnostics schema.")
+    if diagnostics.get("status") not in {"ok", "error"}:
+        raise _StrictDataError("Invalid diagnostics status.")
+    if not isinstance(diagnostics.get("errors"), list):
+        raise _StrictDataError("Diagnostics errors must be a list.")
+    if not isinstance(diagnostics.get("warnings"), list):
+        raise _StrictDataError("Diagnostics warnings must be a list.")
+    if not isinstance(diagnostics.get("outputs"), dict):
+        raise _StrictDataError("Diagnostics outputs must be an object.")
+
+    validate_diagnostic_items(diagnostics["errors"])
+    validate_diagnostic_items(diagnostics["warnings"])
+    if diagnostics["status"] == "ok" and diagnostics["errors"]:
+        raise _StrictDataError("Successful diagnostics cannot contain errors.")
+    if diagnostics["status"] == "error" and not diagnostics["errors"]:
+        raise _StrictDataError("Error diagnostics must contain an error item.")
+
+
+def validate_diagnostic_items(items):
+    for item in items:
+        if not isinstance(item, dict):
+            raise _StrictDataError("Diagnostic items must be objects.")
+        if not isinstance(item.get("code"), str) or not item["code"]:
+            raise _StrictDataError("Diagnostic codes must be non-empty strings.")
+        if not isinstance(item.get("message"), str) or not item["message"]:
+            raise _StrictDataError("Diagnostic messages must be non-empty strings.")
+
+
+def validate_output_mapping(job_dir, status, outputs):
+    if status == "ok":
+        allowed = {**SUCCESS_OUTPUT_MAPPING, **OPTIONAL_SUCCESS_OUTPUT_MAPPING}
+        required_keys = set(SUCCESS_OUTPUT_MAPPING)
+    else:
+        allowed = ERROR_OUTPUT_MAPPING
+        required_keys = set()
+
+    if not required_keys.issubset(outputs) or not set(outputs).issubset(allowed):
+        raise _StrictDataError("Output keys are not approved for this status.")
+    for output_name, filename in outputs.items():
+        if filename != allowed[output_name]:
+            raise _StrictDataError("Output filename does not match its approved name.")
+
+    return {
+        output_name: job_dir / filename
+        for output_name, filename in outputs.items()
+        if output_name != "diagnostics"
+    }
+
+
+def validate_success_outputs(output_paths, expected_job_id):
+    if not isinstance(expected_job_id, str) or not expected_job_id:
+        raise _StrictDataError("Expected job_id must be a non-empty string.")
+    drawing_ir = read_strict_json_object(output_paths["drawing_ir"])
+    if drawing_ir.get("schema_version") != "1.0":
+        raise _StrictDataError("DrawingIR schema_version must be 1.0.")
+    if drawing_ir.get("source_job_id") != expected_job_id:
+        raise _StrictDataError("DrawingIR source_job_id must match the submitted job_id.")
+    if not isinstance(drawing_ir.get("sheet"), dict):
+        raise _StrictDataError("DrawingIR sheet must be an object.")
+    if not is_object_list(drawing_ir.get("layers")):
+        raise _StrictDataError("DrawingIR layers must be a list of objects.")
+    if not is_object_list(drawing_ir.get("views")):
+        raise _StrictDataError("DrawingIR views must be a list of objects.")
+
+    validate_svg(output_paths["svg"])
+    if "image_assist_overlay" in output_paths:
+        validate_svg(output_paths["image_assist_overlay"])
+
+
+def is_object_list(value):
+    return isinstance(value, list) and all(isinstance(item, dict) for item in value)
+
+
+def validate_svg(path):
+    svg_text = path.read_bytes().decode("utf-8")
+    root = ElementTree.fromstring(svg_text)
+    if root.tag not in {"svg", "{http://www.w3.org/2000/svg}svg"}:
+        raise _StrictDataError("SVG output must have an svg root element.")
+
+
+def read_strict_json_object(path):
+    text = path.read_bytes().decode("utf-8")
+    payload = json.loads(
+        text,
+        object_pairs_hook=strict_object,
+        parse_constant=reject_json_constant,
+        parse_float=parse_finite_float,
+    )
+    if not isinstance(payload, dict):
+        raise _StrictDataError("JSON root must be an object.")
+    return payload
+
+
+def strict_object(pairs):
+    payload = {}
+    for key, value in pairs:
+        if key in payload:
+            raise _StrictDataError(f"Duplicate JSON key {key}.")
+        payload[key] = value
+    return payload
+
+
+def reject_json_constant(value):
+    raise _StrictDataError(f"Non-finite JSON value {value}.")
+
+
+def parse_finite_float(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise _StrictDataError("JSON numbers must be finite.")
+    return number
+
+
+def require_regular_output(path, job_dir):
+    if not is_regular_file(path):
+        raise _StrictDataError("Output must be a regular, non-empty file.")
+    resolved = path.resolve(strict=True)
+    try:
+        resolved.relative_to(job_dir.resolve(strict=True))
+    except ValueError:
+        raise _StrictDataError("Output must stay within the job folder.") from None
+
+
+def is_regular_file(path, *, allow_empty=False):
+    try:
+        file_stat = path.lstat()
+    except OSError:
+        return False
+    return (
+        stat.S_ISREG(file_stat.st_mode)
+        and not path.is_symlink()
+        and (allow_empty or file_stat.st_size > 0)
+    )
+
+
+def backend_output_failure(diagnostics_path, returncode, code, message):
+    diagnostics = bridge_error_diagnostics(code, message)
+    approved_outputs = {}
+    if replace_diagnostics_file(diagnostics_path, diagnostics):
+        approved_outputs["diagnostics"] = diagnostics_path
+    return BackendOutputState(
+        diagnostics=diagnostics,
+        returncode=nonzero_returncode(returncode),
+        approved_outputs=approved_outputs,
+    )
+
+
+def replace_diagnostics_file(path, diagnostics):
+    try:
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.exists():
+            path.rmdir()
+        write_json(path, diagnostics)
+        return is_regular_file(path)
+    except OSError:
+        return False
+
+
+def nonzero_returncode(returncode):
+    return returncode if isinstance(returncode, int) and returncode != 0 else 1
 
 
 def bridge_error_diagnostics(code, message):
@@ -277,9 +570,3 @@ def write_json(path, payload):
         json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-
-
-def read_json(path):
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))

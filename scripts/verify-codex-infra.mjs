@@ -50,6 +50,7 @@ const requiredFiles = [
   'scripts/run-packaging-smoke.mjs',
   'scripts/package_release.py',
   'scripts/install-hooks.mjs',
+  'backend/src/blueprints_backend/svg_ids.py',
   'backend/src/blueprints_backend/gost.py',
   'backend/src/blueprints_backend/dimensions.py',
   'backend/src/blueprints_backend/standards.py',
@@ -224,6 +225,16 @@ if (exists('package.json')) {
   check('quality:deep runs fast gate before backend tests', /npm run quality:fast/.test(scripts['quality:deep'] || '') && /npm run test:backend/.test(scripts['quality:deep'] || ''));
   check('quality:deep runs packaging smoke after backend tests', /npm run test:backend/.test(scripts['quality:deep'] || '') && /npm run test:packaging/.test(scripts['quality:deep'] || '') && scripts['quality:deep'].indexOf('npm run test:backend') < scripts['quality:deep'].indexOf('npm run test:packaging'));
   check('codex:ship runs quality:deep', scripts['codex:ship'] === 'npm run quality:deep');
+
+  if (exists('package-lock.json')) {
+    const packageLock = JSON.parse(read('package-lock.json'));
+    check(
+      'Node harness version matches package-lock root metadata',
+      packageConfig.version === packageLock.version
+        && packageConfig.version === packageLock.packages?.['']?.version,
+    );
+    check('Node verification harness version is 0.1.0', packageConfig.version === '0.1.0', packageConfig.version);
+  }
 }
 
 if (exists('scripts/run-python-tests.mjs')) {
@@ -246,6 +257,22 @@ if (exists('scripts/package_release.py')) {
   check('package release writes manifest', /release_manifest\.json/.test(packageRelease));
   check('package release excludes Python cache files', /__pycache__/.test(packageRelease) && /\.pyc/.test(packageRelease));
   check('package release uses stdlib zipfile', /import zipfile/.test(packageRelease) && !/pip|poetry|pyinstaller|nuitka|briefcase/i.test(packageRelease));
+  check(
+    'package release reads each component version from its canonical owner',
+    /package_version\s*=\s*json\.loads\([\s\S]*?package\.json/.test(packageRelease)
+      && /addon_version\s*=\s*read_bl_info_version\([\s\S]*?blueprints_addon[\s\S]*?__init__\.py/.test(packageRelease)
+      && /backend_version\s*=\s*read_backend_version\([\s\S]*?blueprints_backend[\s\S]*?__init__\.py/.test(packageRelease),
+  );
+  check(
+    'release manifest projects independent canonical component versions',
+    /"package_version": package_version/.test(packageRelease)
+      && /"id": "blender_addon_zip"[\s\S]*?"version": addon_version/.test(packageRelease)
+      && /"id": "backend_bundle_zip"[\s\S]*?"version": backend_version/.test(packageRelease),
+  );
+  check(
+    'release manifest data schema remains 1.0',
+    /"schema_version":\s*"1\.0"/.test(packageRelease),
+  );
 }
 
 if (exists('.gitignore')) {
@@ -362,6 +389,26 @@ if (exists('README.md')) {
   check('README describes I7 packaging hardening slice', /Packaging \+ Hardening I7/.test(readme));
   check('README lists Blender smoke command', /npm run test:blender/.test(readme));
   check('README lists packaging smoke command', /npm run test:packaging/.test(readme));
+  check(
+    'README has runnable PowerShell backend source command',
+    /```powershell[\s\S]*?\$env:PYTHONPATH\s*=\s*["']backend\/src["'][\s\S]*?python -m blueprints_backend <job-folder>[\s\S]*?```/.test(readme),
+  );
+  check(
+    'README has runnable POSIX backend source command',
+    /```(?:bash|sh)[\s\S]*?PYTHONPATH=backend\/src python -m blueprints_backend <job-folder>[\s\S]*?```/.test(readme),
+  );
+  check(
+    'README documents two-ZIP installation and Backend Source folder contract',
+    /blueprints_addon-<addon-version>\.zip/.test(readme)
+      && /blueprints_backend-<backend-version>\.zip/.test(readme)
+      && /Backend Source[\s\S]{0,240}folder that\s+directly contains\s+`?blueprints_backend`?/i.test(readme)
+      && /not to the ZIP and not to the\s+`blueprints_backend` package folder itself/i.test(readme),
+  );
+  check(
+    'README documents optional Backend Python and Job Root defaults',
+    /Backend Python[\s\S]*optional[\s\S]*sys\.executable/i.test(readme)
+      && /Job Root[\s\S]*optional[\s\S]*temporary job folders/i.test(readme),
+  );
   if (exists('docs/handoff/ITERATION_LOG.md')) {
     const handoff = read('docs/handoff/ITERATION_LOG.md');
     check('handoff records I2 bridge when README claims I2', !/I2 Blender Bridge/.test(readme) || /iteration_id:\s*I2-blender-bridge/.test(handoff));
@@ -370,6 +417,24 @@ if (exists('README.md')) {
     check('handoff records I5 standards when README claims I5', !/Standards DB I5 V1/.test(readme) || /iteration_id:\s*I5-standards-db/.test(handoff));
     check('handoff records I6 image assist when README claims I6', !/Image Assist I6 V1/.test(readme) || /iteration_id:\s*I6-image-assist/.test(handoff));
   }
+}
+
+if (exists('docs/release/packaging.md')) {
+  const packagingDoc = read('docs/release/packaging.md');
+  check(
+    'release docs describe independent component version owners',
+    /0\.2\.1/.test(packagingDoc)
+      && /0\.1\.1/.test(packagingDoc)
+      && /0\.1\.0/.test(packagingDoc)
+      && /not (?:a )?lockstep|independent/i.test(packagingDoc),
+  );
+  check(
+    'release docs describe two ZIPs and exact Backend Source parent folder',
+    /blueprints_addon-<addon-version>\.zip/.test(packagingDoc)
+      && /blueprints_backend-<backend-version>\.zip/.test(packagingDoc)
+      && /Backend Source folder directly contains the\s+`blueprints_backend` package/i.test(packagingDoc)
+      && /not the ZIP and\s+not the package directory itself/i.test(packagingDoc),
+  );
 }
 
 if (exists('docs/agent/skill-map.md')) {
@@ -382,6 +447,32 @@ if (exists('blender_addon/blueprints_addon/bridge.py')) {
   const bridge = read('blender_addon/blueprints_addon/bridge.py');
   check('Blender bridge does not synthesize drawing line entities', !/start_mm|end_mm|-bridge-line/.test(bridge));
   check('Blender bridge requests GOST sheet composition', /"standard": "GOST"/.test(bridge));
+  check(
+    'Blender bridge validates Backend Source as the parent of package entrypoints',
+    /def resolve_backend_source\(/.test(bridge)
+      && /\/\s*"blueprints_backend"/.test(bridge)
+      && /"__init__\.py"/.test(bridge)
+      && /"__main__\.py"/.test(bridge)
+      && /backend_not_configured/.test(bridge),
+  );
+  check(
+    'Blender bridge launches backend from trusted backend source instead of job cwd',
+    /cwd=str\(backend_src_path\)/.test(bridge) && !/cwd=str\(job_dir\)/.test(bridge),
+  );
+  check(
+    'Blender SceneSnapshot schema remains 1.0',
+    /SCENE_SNAPSHOT_SCHEMA_VERSION\s*=\s*["']1\.0["']/.test(bridge),
+  );
+}
+
+if (exists('blender_addon/blueprints_addon/__init__.py')) {
+  const addonEntrypoint = read('blender_addon/blueprints_addon/__init__.py');
+  check('Blender add-on version owner records 0.2.1', /"version":\s*\(0,\s*2,\s*1\)/.test(addonEntrypoint));
+}
+
+if (exists('backend/src/blueprints_backend/__init__.py')) {
+  const backendEntrypoint = read('backend/src/blueprints_backend/__init__.py');
+  check('backend version owner records 0.1.1', /__version__\s*=\s*["']0\.1\.1["']/.test(backendEntrypoint));
 }
 
 if (exists('backend/src/blueprints_backend/gost.py')) {
@@ -417,6 +508,11 @@ if (exists('backend/src/blueprints_backend/standards.py') && exists('backend/src
 
 if (exists('backend/src/blueprints_backend/image_assist.py')) {
   const imageAssist = read('backend/src/blueprints_backend/image_assist.py');
+  check(
+    'Image Assist owns its supported-type constants',
+    /SUPPORTED_OVERLAY_TYPES\s*=\s*\{/.test(imageAssist)
+      && /SUPPORTED_PRIMITIVES\s*=\s*\{/.test(imageAssist),
+  );
   for (const overlayType of ['contour', 'primitive_hint', 'relative_dimension']) {
     check(`Image Assist v1 supports ${overlayType}`, new RegExp(`"${overlayType}"`).test(imageAssist));
   }
@@ -426,6 +522,24 @@ if (exists('backend/src/blueprints_backend/image_assist.py')) {
   check('Image Assist v1 stays relative by default', /"units": "relative"/.test(imageAssist) && /"kind": "relative"/.test(imageAssist));
   check('Image Assist v1 reuses existing formatting helpers', /svg_writer\.fmt/.test(imageAssist) && /dimensions\.fmt_measure/.test(imageAssist) && !/def fmt\(/.test(imageAssist) && !/def fmt_measure\(/.test(imageAssist));
   check('Image Assist v1 avoids CV and projection dependencies', !/PIL|cv2|numpy|skimage|FreeCAD|TechDraw|OCCT|subprocess/.test(imageAssist));
+}
+
+if (
+  exists('backend/src/blueprints_backend/svg_ids.py')
+  && exists('backend/src/blueprints_backend/svg_writer.py')
+  && exists('backend/src/blueprints_backend/image_assist.py')
+) {
+  const svgIds = read('backend/src/blueprints_backend/svg_ids.py');
+  const svgWriter = read('backend/src/blueprints_backend/svg_writer.py');
+  const imageAssist = read('backend/src/blueprints_backend/image_assist.py');
+  check(
+    'normal and Image Assist SVG share the svg_ids.dom_id owner',
+    /def dom_id\(kind, \*logical_ids\):/.test(svgIds)
+      && /from \.svg_ids import dom_id/.test(svgWriter)
+      && /from \.svg_ids import dom_id/.test(imageAssist)
+      && !/def dom_id\(/.test(svgWriter)
+      && !/def dom_id\(/.test(imageAssist),
+  );
 }
 
 if (exists('backend/src/blueprints_backend/job.py')) {
@@ -441,6 +555,17 @@ if (exists('backend/src/blueprints_backend/job.py')) {
   check('job validation includes image assist', /validate_image_assist/.test(job) && /image_assist\.overlays/.test(job));
   check('job validation rejects absolute image assist coordinates without scale', /absolute coordinates require scale\.reference_mm_per_unit/.test(job));
   check('job validation rejects duplicate image assist overlay ids', /validate_unique_image_assist_overlay_ids/.test(job) && /image_assist overlay id values must be unique/.test(job));
+  check(
+    'job validation reuses Image Assist supported-type owners',
+    /from \. import [^\n]*\bimage_assist\b/.test(job)
+      && /not in image_assist\.SUPPORTED_OVERLAY_TYPES/.test(job)
+      && /not in image_assist\.SUPPORTED_PRIMITIVES/.test(job),
+  );
+  check(
+    'job and SceneSnapshot schemas remain 1.0',
+    /payload\.get\("schema_version"\)\s*==\s*"1\.0"/.test(job)
+      && /snapshot\.get\("schema_version"\)\s*==\s*"1\.0"/.test(job),
+  );
 }
 
 if (exists('backend/src/blueprints_backend/drawing_ir.py')) {
@@ -448,6 +573,7 @@ if (exists('backend/src/blueprints_backend/drawing_ir.py')) {
   check('DrawingIR assigns dimensions by view order', /for index, view in enumerate\(job\["views"\]\)/.test(drawingIr) && /"dimensions": view_dimensions\[index\]/.test(drawingIr));
   check('DrawingIR avoids id-keyed dimension lookup', !/view_dimensions\s*=\s*\{/.test(drawingIr) && !/view_dimensions\[view\["id"\]\]/.test(drawingIr));
   check('DrawingIR emits standards matches', /standards\.match_job\(job\)/.test(drawingIr) && /"standards": standard_matches/.test(drawingIr));
+  check('DrawingIR schema remains 1.0', /"schema_version":\s*"1\.0"/.test(drawingIr));
 }
 
 if (exists('backend/src/blueprints_backend/cli.py') && exists('backend/src/blueprints_backend/diagnostics.py')) {
@@ -457,6 +583,7 @@ if (exists('backend/src/blueprints_backend/cli.py') && exists('backend/src/bluep
   check('backend CLI forwards standards diagnostics', /ir\.get\("standards"\) if job\.get\("standards"\)/.test(cli));
   check('diagnostics can include image assist overlay output', /image_assist=False/.test(diagnostics) && /image_assist_overlay/.test(diagnostics));
   check('backend CLI writes image assist overlay output', /assist_overlay\.svg/.test(cli) && /image_assist\.render_overlay/.test(cli));
+  check('diagnostics schema remains 1.0', /"schema_version":\s*"1\.0"/.test(diagnostics));
 }
 
 if (exists('backend/src/blueprints_backend/svg_writer.py')) {

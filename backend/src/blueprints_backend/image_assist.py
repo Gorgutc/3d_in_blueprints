@@ -1,6 +1,7 @@
 import math
 
 from . import dimensions, svg_writer
+from .svg_ids import dom_id
 
 SUPPORTED_OVERLAY_TYPES = {
     "contour",
@@ -90,14 +91,16 @@ def render_contour(overlay):
         for point in overlay["points_rel"]
     )
     return (
-        f'    <polyline id="{escape_attr(overlay["id"])}" points="{points}" '
+        f'    <polyline id="{dom_id("overlay", overlay["id"])}" '
+        f'{svg_writer.trace_id("overlay", overlay["id"])} points="{points}" '
         'fill="none" stroke="#0072ce" stroke-width="0.01" />'
     )
 
 
 def render_primitive_hint(overlay):
     return (
-        f'    <circle id="{escape_attr(overlay["id"])}" data-primitive="{escape_attr(overlay["primitive"])}" '
+        f'    <circle id="{dom_id("overlay", overlay["id"])}" '
+        f'{svg_writer.trace_id("overlay", overlay["id"])} data-primitive="{escape_attr(overlay["primitive"])}" '
         f'cx="{fmt(overlay["center_rel"][0])}" cy="{fmt(overlay["center_rel"][1])}" r="{fmt(overlay["radius_rel"])}" '
         'fill="none" stroke="#b45f06" stroke-width="0.01" />'
     )
@@ -108,14 +111,16 @@ def render_relative_dimension(overlay):
     end = overlay["end_rel"]
     text_x = (start[0] + end[0]) / 2
     text_y = min(start[1], end[1]) - 0.02
+    element_id = dom_id("overlay", overlay["id"])
+    trace_attr = svg_writer.trace_id("overlay", overlay["id"])
     return [
         (
-            f'    <line id="{escape_attr(overlay["id"])}-line" x1="{fmt(start[0])}" y1="{fmt(start[1])}" '
+            f'    <line id="{element_id}-line" {trace_attr} x1="{fmt(start[0])}" y1="{fmt(start[1])}" '
             f'x2="{fmt(end[0])}" y2="{fmt(end[1])}" fill="none" stroke="#111111" '
             'stroke-width="0.008" stroke-linecap="round" />'
         ),
         (
-            f'    <text id="{escape_attr(overlay["id"])}-text" x="{fmt(text_x)}" y="{fmt(text_y)}" '
+            f'    <text id="{element_id}-text" {trace_attr} x="{fmt(text_x)}" y="{fmt(text_y)}" '
             'font-size="0.035" font-family="monospace" fill="#111111" text-anchor="middle">'
             f'{escape_text(overlay["label"])}</text>'
         ),

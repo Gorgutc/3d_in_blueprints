@@ -14,6 +14,7 @@ FIXTURES = ROOT / "backend" / "tests" / "fixtures"
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
 from blueprints_backend import cli as cli_module
+from blueprints_backend import svg_ids
 from blueprints_backend import standards as standards_module
 
 
@@ -346,11 +347,15 @@ class BackendCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             sheet_svg = (job_dir / "sheet.svg").read_text(encoding="utf-8")
             self.assertIn(
-                '<line id="dim-hole-dia-leader" x1="95" y1="75" x2="112" y2="70"',
+                f'<line id="{svg_ids.dom_id("dimension", "front", "dim-hole-dia")}-leader" '
+                'data-view-id="front" data-dimension-id="dim-hole-dia" '
+                'x1="95" y1="75" x2="112" y2="70"',
                 sheet_svg,
             )
             self.assertIn(
-                '<line id="dim-hole-note-leader" x1="125" y1="75" x2="140" y2="70"',
+                f'<line id="{svg_ids.dom_id("dimension", "front", "dim-hole-note")}-leader" '
+                'data-view-id="front" data-dimension-id="dim-hole-note" '
+                'x1="125" y1="75" x2="140" y2="70"',
                 sheet_svg,
             )
 
