@@ -675,13 +675,18 @@ if (exists('docs/agent/frozen-decisions.md')) {
   check('frozen decisions match the exact FD-001 through FD-014 contract', errors.length === 0, errors.join('; '));
   const firstBullet = '- `FD-001` Product scope is selected: Blender add-on + local standalone backend.';
   for (const [name, candidate] of [
-    ['missing ID', frozen.replace(`${firstBullet}\n`, '')],
+    ['missing ID', frozen.replace(firstBullet, '')],
     ['duplicate ID', frozen.replace(firstBullet, `${firstBullet}\n${firstBullet}`)],
     ['unknown ID', frozen.replace(firstBullet, `${firstBullet}\n- \`FD-999\` Unknown decision.`)],
     ['one-character text drift', frozen.replace('Product scope is selected', 'Product scope is Selected')],
   ]) {
     check(`frozen negative fixture rejects ${name}`, frozenDecisionErrors(candidate).length > 0);
   }
+  const crlfFrozen = frozen.replace(/\r?\n/g, '\r\n');
+  check(
+    'frozen negative fixture rejects a missing ID with CRLF input',
+    frozenDecisionErrors(crlfFrozen.replace(firstBullet, '')).length > 0,
+  );
 }
 
 {
