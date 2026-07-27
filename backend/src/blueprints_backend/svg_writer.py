@@ -1,6 +1,9 @@
 import math
 from xml.sax.saxutils import escape
 
+from .svg_ids import dom_id
+from .validation import require_stroked_line_layer, require_xml_1_0_text
+
 
 def render(drawing_ir):
     sheet = drawing_ir["sheet"]
@@ -27,7 +30,12 @@ def render(drawing_ir):
     for element in drawing_ir.get("sheet_elements", []):
         lines.append(render_sheet_element(element, layers[element["layer"]]))
     for view in drawing_ir["views"]:
-        lines.append(f'    <g id="view-{escape_attr(view["id"])}" data-scale="{fmt(view["scale"])}">')
+        view_attrs = [
+            f'id="{dom_id("view", view["id"])}"',
+            trace_id("view", view["id"]),
+            f'data-scale="{fmt(view["scale"])}"',
+        ]
+        lines.append(f'    <g {" ".join(view_attrs)}>')
         for entity in view["entities"]:
             if entity["type"] == "line":
                 lines.append(render_line(view, entity, layers[entity["layer"]]))
@@ -51,13 +59,13 @@ def render_sheet_element(element, layer):
 
 def render_rect(element, layer):
     attrs = [
-        f'id="{escape_attr(element["id"])}"',
+        f'id="{dom_id("sheet-element", element["id"])}"',
         f'x="{fmt(element["x_mm"])}"',
         f'y="{fmt(element["y_mm"])}"',
         f'width="{fmt(element["width_mm"])}"',
         f'height="{fmt(element["height_mm"])}"',
         'fill="none"',
-        f'stroke="{layer["stroke"]}"',
+        f'stroke="{escape_attr(layer["stroke"])}"',
         f'stroke-width="{fmt(layer["stroke_width"])}"',
     ]
     return f'    <rect {" ".join(attrs)} />'
@@ -65,7 +73,7 @@ def render_rect(element, layer):
 
 def render_absolute_line(element, layer):
     return render_line_coordinates(
-        element["id"],
+        dom_id("sheet-element", element["id"]),
         element["start_mm"][0],
         element["start_mm"][1],
         element["end_mm"][0],
@@ -77,38 +85,56 @@ def render_absolute_line(element, layer):
 
 def render_text(element, layer):
     attrs = [
-        f'id="{escape_attr(element["id"])}"',
+        f'id="{dom_id("sheet-element", element["id"])}"',
         f'x="{fmt(element["x_mm"])}"',
         f'y="{fmt(element["y_mm"])}"',
         f'font-size="{fmt(element["font_size_mm"])}"',
         f'font-family="{escape_attr(element["font_family"])}"',
-        f'fill="{layer["fill"]}"',
+        f'fill="{escape_attr(layer["fill"])}"',
     ]
     return f'    <text {" ".join(attrs)}>{escape_text(element["text"])}</text>'
 
 
 def render_line(view, entity, layer):
+    require_stroked_line_layer(layer)
     x1, y1 = transform(view, entity["start_mm"])
     x2, y2 = transform(view, entity["end_mm"])
-    return render_line_coordinates(entity["id"], x1, y1, x2, y2, layer, indent="      ")
+    return render_line_coordinates(
+        dom_id("entity", view["id"], entity["id"]),
+        x1,
+        y1,
+        x2,
+        y2,
+        layer,
+        indent="      ",
+        trace_attrs=[
+            trace_id("view", view["id"]),
+            trace_id("entity", entity["id"]),
+        ],
+    )
 
 
 def render_dimension(view, dimension, layer):
+    element_id = dom_id("dimension", view["id"], dimension["id"])
+    trace_attrs = [
+        trace_id("view", view["id"]),
+        trace_id("dimension", dimension["id"]),
+    ]
     dimension_type = dimension["type"]
     if dimension_type == "linear":
-        return render_linear_dimension(view, dimension, layer)
+        return render_linear_dimension(view, dimension, layer, element_id, trace_attrs)
     if dimension_type == "diameter":
-        return render_diameter_dimension(view, dimension, layer)
+        return render_diameter_dimension(view, dimension, layer, element_id, trace_attrs)
     if dimension_type == "radius":
-        return render_radius_dimension(view, dimension, layer)
+        return render_radius_dimension(view, dimension, layer, element_id, trace_attrs)
     if dimension_type == "hole":
-        return render_hole_dimension(view, dimension, layer)
+        return render_hole_dimension(view, dimension, layer, element_id, trace_attrs)
     if dimension_type == "center_distance":
-        return render_center_distance_dimension(view, dimension, layer)
+        return render_center_distance_dimension(view, dimension, layer, element_id, trace_attrs)
     raise ValueError(f"Unsupported dimension type {dimension_type}.")
 
 
-def render_linear_dimension(view, dimension, layer):
+def render_linear_dimension(view, dimension, layer, element_id, trace_attrs):
     start = transform(view, dimension["start_mm"])
     end = transform(view, dimension["end_mm"])
     dimension_start = add_offset(start, dimension["offset_mm"])
@@ -116,35 +142,35 @@ def render_linear_dimension(view, dimension, layer):
     text_position = midpoint(dimension_start, dimension_end)
     text_position[1] -= 1
     return [
-        render_line_coordinates(f'{dimension["id"]}-ext-start', start[0], start[1], dimension_start[0], dimension_start[1], layer, indent="      "),
-        render_line_coordinates(f'{dimension["id"]}-ext-end', end[0], end[1], dimension_end[0], dimension_end[1], layer, indent="      "),
-        render_line_coordinates(f'{dimension["id"]}-line', dimension_start[0], dimension_start[1], dimension_end[0], dimension_end[1], layer, indent="      "),
-        render_dimension_text(f'{dimension["id"]}-text', text_position[0], text_position[1], dimension["text"], layer, text_anchor="middle"),
+        render_line_coordinates(f"{element_id}-ext-start", start[0], start[1], dimension_start[0], dimension_start[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_line_coordinates(f"{element_id}-ext-end", end[0], end[1], dimension_end[0], dimension_end[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_line_coordinates(f"{element_id}-line", dimension_start[0], dimension_start[1], dimension_end[0], dimension_end[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_dimension_text(f"{element_id}-text", text_position[0], text_position[1], dimension["text"], layer, text_anchor="middle", trace_attrs=trace_attrs),
     ]
 
 
-def render_diameter_dimension(view, dimension, layer):
+def render_diameter_dimension(view, dimension, layer, element_id, trace_attrs):
     center = transform(view, dimension["center_mm"])
     end = [
         center[0] + model_length(view, dimension["diameter_mm"] / 2) + 5,
         center[1] - 5,
     ]
     return [
-        render_line_coordinates(f'{dimension["id"]}-leader', center[0], center[1], end[0], end[1], layer, indent="      "),
-        render_dimension_text(f'{dimension["id"]}-text', end[0] + 2, end[1], dimension["text"], layer),
+        render_line_coordinates(f"{element_id}-leader", center[0], center[1], end[0], end[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_dimension_text(f"{element_id}-text", end[0] + 2, end[1], dimension["text"], layer, trace_attrs=trace_attrs),
     ]
 
 
-def render_radius_dimension(view, dimension, layer):
+def render_radius_dimension(view, dimension, layer, element_id, trace_attrs):
     center = transform(view, dimension["center_mm"])
     point = transform(view, dimension["point_mm"])
     return [
-        render_line_coordinates(f'{dimension["id"]}-leader', center[0], center[1], point[0], point[1], layer, indent="      "),
-        render_dimension_text(f'{dimension["id"]}-text', point[0] + 2, point[1], dimension["text"], layer),
+        render_line_coordinates(f"{element_id}-leader", center[0], center[1], point[0], point[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_dimension_text(f"{element_id}-text", point[0] + 2, point[1], dimension["text"], layer, trace_attrs=trace_attrs),
     ]
 
 
-def render_hole_dimension(view, dimension, layer):
+def render_hole_dimension(view, dimension, layer, element_id, trace_attrs):
     center = transform(view, dimension["center_mm"])
     cross_size = 2
     end = [
@@ -152,14 +178,14 @@ def render_hole_dimension(view, dimension, layer):
         center[1] - 5,
     ]
     return [
-        render_line_coordinates(f'{dimension["id"]}-center-h', center[0] - cross_size, center[1], center[0] + cross_size, center[1], layer, indent="      "),
-        render_line_coordinates(f'{dimension["id"]}-center-v', center[0], center[1] - cross_size, center[0], center[1] + cross_size, layer, indent="      "),
-        render_line_coordinates(f'{dimension["id"]}-leader', center[0], center[1], end[0], end[1], layer, indent="      "),
-        render_dimension_text(f'{dimension["id"]}-text', end[0] + 2, end[1], dimension["text"], layer),
+        render_line_coordinates(f"{element_id}-center-h", center[0] - cross_size, center[1], center[0] + cross_size, center[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_line_coordinates(f"{element_id}-center-v", center[0], center[1] - cross_size, center[0], center[1] + cross_size, layer, indent="      ", trace_attrs=trace_attrs),
+        render_line_coordinates(f"{element_id}-leader", center[0], center[1], end[0], end[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_dimension_text(f"{element_id}-text", end[0] + 2, end[1], dimension["text"], layer, trace_attrs=trace_attrs),
     ]
 
 
-def render_center_distance_dimension(view, dimension, layer):
+def render_center_distance_dimension(view, dimension, layer, element_id, trace_attrs):
     start = transform(view, dimension["centers_mm"][0])
     end = transform(view, dimension["centers_mm"][1])
     dimension_start = add_offset(start, dimension["offset_mm"])
@@ -167,41 +193,43 @@ def render_center_distance_dimension(view, dimension, layer):
     text_position = midpoint(dimension_start, dimension_end)
     text_position[1] -= 1
     return [
-        render_line_coordinates(f'{dimension["id"]}-ext-start', start[0], start[1], dimension_start[0], dimension_start[1], layer, indent="      "),
-        render_line_coordinates(f'{dimension["id"]}-ext-end', end[0], end[1], dimension_end[0], dimension_end[1], layer, indent="      "),
-        render_line_coordinates(f'{dimension["id"]}-line', dimension_start[0], dimension_start[1], dimension_end[0], dimension_end[1], layer, indent="      "),
-        render_dimension_text(f'{dimension["id"]}-text', text_position[0], text_position[1], dimension["text"], layer, text_anchor="middle"),
+        render_line_coordinates(f"{element_id}-ext-start", start[0], start[1], dimension_start[0], dimension_start[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_line_coordinates(f"{element_id}-ext-end", end[0], end[1], dimension_end[0], dimension_end[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_line_coordinates(f"{element_id}-line", dimension_start[0], dimension_start[1], dimension_end[0], dimension_end[1], layer, indent="      ", trace_attrs=trace_attrs),
+        render_dimension_text(f"{element_id}-text", text_position[0], text_position[1], dimension["text"], layer, text_anchor="middle", trace_attrs=trace_attrs),
     ]
 
 
-def render_dimension_text(element_id, x, y, text, layer, text_anchor=None):
+def render_dimension_text(element_id, x, y, text, layer, text_anchor=None, trace_attrs=()):
     attrs = [
         f'id="{escape_attr(element_id)}"',
+        *trace_attrs,
         f'x="{fmt(x)}"',
         f'y="{fmt(y)}"',
         'font-size="3.5"',
         'font-family="monospace"',
-        f'fill="{layer["fill"]}"',
+        f'fill="{escape_attr(layer["fill"])}"',
     ]
     if text_anchor:
         attrs.append(f'text-anchor="{escape_attr(text_anchor)}"')
     return f'      <text {" ".join(attrs)}>{escape_text(text)}</text>'
 
 
-def render_line_coordinates(element_id, x1, y1, x2, y2, layer, indent):
+def render_line_coordinates(element_id, x1, y1, x2, y2, layer, indent, trace_attrs=()):
     attrs = [
         f'id="{escape_attr(element_id)}"',
+        *trace_attrs,
         f'x1="{fmt(x1)}"',
         f'y1="{fmt(y1)}"',
         f'x2="{fmt(x2)}"',
         f'y2="{fmt(y2)}"',
         'fill="none"',
-        f'stroke="{layer["stroke"]}"',
+        f'stroke="{escape_attr(layer["stroke"])}"',
         f'stroke-width="{fmt(layer["stroke_width"])}"',
         'stroke-linecap="round"',
     ]
     if "stroke_dasharray" in layer:
-        attrs.append(f'stroke-dasharray="{layer["stroke_dasharray"]}"')
+        attrs.append(f'stroke-dasharray="{escape_attr(layer["stroke_dasharray"])}"')
     return f'{indent}<line {" ".join(attrs)} />'
 
 
@@ -241,8 +269,16 @@ def fmt(value):
 
 
 def escape_text(value):
-    return escape(str(value))
+    text = str(value)
+    require_xml_1_0_text(text, context="SVG text")
+    return escape(text)
 
 
 def escape_attr(value):
-    return escape(str(value), {'"': '&quot;'})
+    text = str(value)
+    require_xml_1_0_text(text, context="SVG attribute")
+    return escape(text, {'"': '&quot;'})
+
+
+def trace_id(kind, logical_id):
+    return f'data-{kind}-id="{escape_attr(logical_id)}"'

@@ -1,15 +1,14 @@
 import json
-import math
-from pathlib import PurePath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from . import dimensions
-
-
-class JobError(ValueError):
-    def __init__(self, code, message):
-        super().__init__(message)
-        self.code = code
-        self.message = message
+from . import dimensions, image_assist
+from .drawing_ir import LAYER_STYLES, default_style
+from .validation import (
+    JobError,
+    is_number,
+    require_stroked_line_layer,
+    require_xml_1_0_text,
+)
 
 
 def load_job(path):
@@ -29,6 +28,7 @@ def load_job(path):
 
 def validate_job(payload, job_dir=None):
     require(isinstance(payload, dict), "invalid_job", "job.json must be a JSON object.")
+    validate_xml_text(payload)
     require(payload.get("schema_version") == "1.0", "invalid_schema", "job.json schema_version must be 1.0.")
     require(isinstance(payload.get("job_id"), str) and payload["job_id"], "invalid_job", "job_id is required.")
 
@@ -64,8 +64,95 @@ def validate_scene_source(source, job_dir):
     require(is_repo_relative_path(scene_asset), "invalid_source", "source.assets.scene must be a relative file path.")
 
     if job_dir is not None:
-        require((job_dir / scene_snapshot).exists(), "missing_source", f"{scene_snapshot} was not found in the job folder.")
-        require((job_dir / scene_asset).exists(), "missing_source", f"{scene_asset} was not found in the job folder.")
+        snapshot_path = validate_source_file(
+            job_dir,
+            scene_snapshot,
+            "source.scene_snapshot",
+        )
+        validate_source_file(
+            job_dir,
+            scene_asset,
+            "source.assets.scene",
+        )
+        validate_scene_snapshot(snapshot_path)
+
+
+def validate_source_file(job_dir, relative_path, field_name):
+    job_root = Path(job_dir)
+    relative_parts = PurePosixPath(relative_path).parts
+    target = job_root.joinpath(*relative_parts)
+
+    current = job_root
+    for part in relative_parts:
+        current = current / part
+        require(
+            not current.is_symlink(),
+            "invalid_source",
+            f"{field_name} must not resolve through a symlink.",
+        )
+
+    try:
+        resolved_root = job_root.resolve(strict=True)
+        resolved_target = target.resolve(strict=False)
+    except OSError as exc:
+        raise JobError(
+            "invalid_source",
+            f"{field_name} could not be resolved inside the job folder.",
+        ) from exc
+
+    require(
+        resolved_target != resolved_root and resolved_target.is_relative_to(resolved_root),
+        "invalid_source",
+        f"{field_name} must resolve inside the job folder.",
+    )
+    require(
+        target.exists(),
+        "missing_source",
+        f"{relative_path} was not found in the job folder.",
+    )
+    require(
+        target.is_file(),
+        "invalid_source",
+        f"{field_name} must reference a regular file.",
+    )
+    try:
+        file_size = target.stat().st_size
+    except OSError as exc:
+        raise JobError(
+            "invalid_source",
+            f"{field_name} could not be inspected.",
+        ) from exc
+    require(
+        file_size > 0,
+        "invalid_source",
+        f"{field_name} must reference a non-empty file.",
+    )
+    return target
+
+
+def validate_scene_snapshot(snapshot_path):
+    try:
+        snapshot_text = snapshot_path.read_text(encoding="utf-8")
+        snapshot = json.loads(
+            snapshot_text,
+            parse_constant=reject_scene_snapshot_json_constant,
+        )
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise JobError(
+            "invalid_source",
+            "source.scene_snapshot must be strict UTF-8 JSON.",
+        ) from exc
+
+    require(
+        isinstance(snapshot, dict),
+        "invalid_source",
+        "source.scene_snapshot must contain a JSON object.",
+    )
+    require(
+        snapshot.get("schema_version") == "1.0",
+        "invalid_source",
+        "source.scene_snapshot schema_version must be 1.0.",
+    )
 
 
 def validate_sheet_standard(sheet):
@@ -88,8 +175,11 @@ def validate_sheet_standard(sheet):
 
 
 def validate_unique_view_ids(views):
-    view_ids = [view["id"] for view in views]
-    require(len(view_ids) == len(set(view_ids)), "invalid_view", "view.id values must be unique.")
+    require_unique_ids(
+        views,
+        "invalid_view",
+        "view.id values must be unique.",
+    )
 
 
 def validate_view(view):
@@ -101,6 +191,7 @@ def validate_view(view):
     require(isinstance(entities, list), "invalid_entities", "view.entities must be an array.")
     for entity in entities:
         validate_entity(entity)
+    validate_unique_entity_ids(entities)
     dimensions = view.get("dimensions", [])
     require(isinstance(dimensions, list), "invalid_dimensions", "view.dimensions must be an array when provided.")
     for dimension in dimensions:
@@ -117,6 +208,8 @@ def validate_entity(entity):
     require(is_pair(entity.get("start_mm")), "invalid_entity", "line.start_mm must be a two-number array.")
     require(is_pair(entity.get("end_mm")), "invalid_entity", "line.end_mm must be a two-number array.")
     require(isinstance(entity.get("layer"), str) and entity["layer"], "invalid_entity", "entity.layer is required.")
+    layer_style = LAYER_STYLES.get(entity["layer"], default_style())
+    require_stroked_line_layer(layer_style)
 
 
 def validate_dimension(dimension):
@@ -190,7 +283,7 @@ def validate_image_assist_overlay(overlay, scale):
     require(isinstance(overlay.get("id"), str) and overlay["id"], "invalid_image_assist", "image_assist overlay id is required.")
     require(isinstance(overlay.get("type"), str) and overlay["type"], "invalid_image_assist", "image_assist overlay type is required.")
 
-    if overlay["type"] not in {"contour", "primitive_hint", "relative_dimension"}:
+    if overlay["type"] not in image_assist.SUPPORTED_OVERLAY_TYPES:
         return
 
     if overlay["type"] == "contour":
@@ -204,7 +297,7 @@ def validate_image_assist_overlay(overlay, scale):
         )
     elif overlay["type"] == "primitive_hint":
         require(isinstance(overlay.get("primitive"), str) and overlay["primitive"], "invalid_image_assist", "primitive_hint.primitive is required.")
-        if overlay["primitive"] != "circle":
+        if overlay["primitive"] not in image_assist.SUPPORTED_PRIMITIVES:
             return
         if contains_absolute_coordinates(overlay) and not has_absolute_scale(scale):
             raise JobError("invalid_image_assist", "image_assist overlay absolute coordinates require scale.reference_mm_per_unit.")
@@ -225,8 +318,11 @@ def validate_image_assist_overlay(overlay, scale):
 
 
 def validate_unique_image_assist_overlay_ids(overlays):
-    overlay_ids = [overlay["id"] for overlay in overlays]
-    require(len(overlay_ids) == len(set(overlay_ids)), "invalid_image_assist", "image_assist overlay id values must be unique.")
+    require_unique_ids(
+        overlays,
+        "invalid_image_assist",
+        "image_assist overlay id values must be unique.",
+    )
 
 
 def contains_absolute_coordinates(value):
@@ -261,13 +357,32 @@ def validate_fastener_match(request):
 
 
 def validate_unique_dimension_ids(dimensions):
-    dimension_ids = [dimension["id"] for dimension in dimensions]
-    require(len(dimension_ids) == len(set(dimension_ids)), "invalid_dimension", "dimension.id values must be unique within a view.")
+    require_unique_ids(
+        dimensions,
+        "invalid_dimension",
+        "dimension.id values must be unique within a view.",
+    )
+
+
+def validate_unique_entity_ids(entities):
+    require_unique_ids(
+        entities,
+        "invalid_entity",
+        "entity.id values must be unique within a view.",
+    )
 
 
 def validate_unique_standard_match_ids(fastener_matches):
-    match_ids = [request["id"] for request in fastener_matches]
-    require(len(match_ids) == len(set(match_ids)), "invalid_standards", "standards.fastener_matches.id values must be unique.")
+    require_unique_ids(
+        fastener_matches,
+        "invalid_standards",
+        "standards.fastener_matches.id values must be unique.",
+    )
+
+
+def require_unique_ids(items, code, message):
+    logical_ids = [item["id"] for item in items]
+    require(len(logical_ids) == len(set(logical_ids)), code, message)
 
 
 def validate_optional_offset(dimension):
@@ -288,16 +403,46 @@ def is_pair(value):
     )
 
 
-def is_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-
-
 def is_repo_relative_path(value):
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value or "\\" in value or ":" in value:
         return False
-    path = PurePath(value)
-    return not path.is_absolute() and ".." not in path.parts
+    parts = value.split("/")
+    if any(
+        not part
+        or part in {".", ".."}
+        or part != part.strip()
+        for part in parts
+    ):
+        return False
+    posix_path = PurePosixPath(value)
+    windows_path = PureWindowsPath(value)
+    return (
+        value == posix_path.as_posix()
+        and not posix_path.is_absolute()
+        and not windows_path.is_absolute()
+        and not windows_path.drive
+        and not windows_path.root
+    )
+
+
+def validate_xml_text(value):
+    if isinstance(value, str):
+        require_xml_1_0_text(value, "job.json")
+        return
+    if isinstance(value, list):
+        for item in value:
+            validate_xml_text(item)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str):
+                require_xml_1_0_text(key, "job.json")
+            validate_xml_text(item)
 
 
 def reject_json_constant(value):
     raise ValueError(f"job.json contains non-finite number {value}.")
+
+
+def reject_scene_snapshot_json_constant(value):
+    raise ValueError(f"SceneSnapshot contains non-finite number {value}.")

@@ -1,6 +1,7 @@
 import argparse
 import ast
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,7 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 ZIP_EPOCH = (2026, 1, 1, 0, 0, 0)
+BACKEND_SMOKE_TIMEOUT_SECONDS = 30
 
 
 def main(argv=None):
@@ -148,6 +150,7 @@ def verify_release(output_dir, manifest):
         "blender_addon_zip": [
             "blueprints_addon/__init__.py",
             "blueprints_addon/bridge.py",
+            "blueprints_addon/operator_flow.py",
             "blueprints_addon/preview.py",
         ],
         "backend_bundle_zip": [
@@ -168,6 +171,131 @@ def verify_release(output_dir, manifest):
                 raise AssertionError(f"{artifact_id} missing {required_name}")
         if any("__pycache__" in name for name in names):
             raise AssertionError(f"{artifact_id} contains __pycache__")
+
+    backend_zip = output_dir / artifacts["backend_bundle_zip"]["file"]
+    verify_backend_runtime(backend_zip)
+
+
+def verify_backend_runtime(zip_path):
+    with tempfile.TemporaryDirectory(prefix="blueprints-backend-smoke-") as temp_dir:
+        smoke_root = Path(temp_dir).resolve()
+        checkout_root = ROOT.resolve()
+        if path_is_within(smoke_root, checkout_root):
+            raise AssertionError("backend bundle runtime smoke must run outside the checkout")
+
+        extracted_backend_root = smoke_root / "extracted-backend"
+        job_dir = (smoke_root / "job").resolve()
+        extracted_backend_root.mkdir()
+        job_dir.mkdir()
+
+        with zipfile.ZipFile(zip_path) as archive:
+            archive.extractall(extracted_backend_root)
+
+        (job_dir / "job.json").write_text(
+            json.dumps(backend_smoke_job(), allow_nan=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "blueprints_backend",
+                    str(job_dir),
+                ],
+                cwd=extracted_backend_root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=BACKEND_SMOKE_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AssertionError(
+                f"backend bundle runtime smoke failed: timed out after {BACKEND_SMOKE_TIMEOUT_SECONDS} seconds"
+            ) from exc
+
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or "no subprocess output"
+            raise AssertionError(
+                f"backend bundle runtime smoke failed with exit code {result.returncode}: {detail}"
+            )
+
+        expected_outputs = {
+            "diagnostics": "diagnostics.json",
+            "drawing_ir": "drawing_ir.json",
+            "svg": "sheet.svg",
+        }
+        output_paths = {
+            output_id: job_dir / filename
+            for output_id, filename in expected_outputs.items()
+        }
+        for output_id, output_path in output_paths.items():
+            if not output_path.is_file() or output_path.stat().st_size == 0:
+                raise AssertionError(f"backend bundle runtime smoke failed: missing {output_id} output")
+
+        try:
+            diagnostics = json.loads(output_paths["diagnostics"].read_text(encoding="utf-8"))
+            drawing_ir = json.loads(output_paths["drawing_ir"].read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise AssertionError(f"backend bundle runtime smoke failed: invalid JSON output: {exc}") from exc
+
+        if (
+            not isinstance(diagnostics, dict)
+            or diagnostics.get("schema_version") != "1.0"
+            or diagnostics.get("status") != "ok"
+            or diagnostics.get("errors") != []
+            or diagnostics.get("outputs") != expected_outputs
+        ):
+            raise AssertionError("backend bundle runtime smoke failed: diagnostics did not report success")
+        if (
+            not isinstance(drawing_ir, dict)
+            or drawing_ir.get("schema_version") != "1.0"
+            or drawing_ir.get("source_job_id") != "release-runtime-smoke"
+            or not drawing_ir.get("views")
+        ):
+            raise AssertionError("backend bundle runtime smoke failed: drawing_ir output is incomplete")
+
+
+def backend_smoke_job():
+    return {
+        "job_id": "release-runtime-smoke",
+        "schema_version": "1.0",
+        "sheet": {
+            "format": "A4",
+            "height_mm": 297,
+            "width_mm": 210,
+        },
+        "views": [
+            {
+                "entities": [
+                    {
+                        "end_mm": [40, 0],
+                        "id": "runtime-edge",
+                        "layer": "visible",
+                        "start_mm": [0, 0],
+                        "type": "line",
+                    }
+                ],
+                "id": "front",
+                "label": "Front",
+                "origin_mm": [20, 30],
+                "scale": 1,
+            }
+        ],
+    }
+
+
+def path_is_within(path, parent):
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
 
 
 if __name__ == "__main__":

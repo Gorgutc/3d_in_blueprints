@@ -224,6 +224,60 @@ I7 does not add installers, code signing, Windows executable packaging,
 FreeCAD/TechDraw execution, OCCT/C++ builds, DXF/PDF/DWG exports, or committed
 release artifacts.
 
+## I8 Runtime Contract Hardening
+
+I8 hardens the accepted Blender add-on + standalone backend boundary. It does
+not change the active profile, transport, canonical SVG output, or stdlib-only
+backend decision.
+
+- backend source configuration: `Backend Source` must identify a folder whose
+  immediate child `blueprints_backend` contains both `__init__.py` and
+  `__main__.py`;
+- source-checkout discovery: a blank `Backend Source` may discover only a
+  trusted `backend/src` ancestor of the add-on bridge; an installed add-on with
+  blank configuration fails with actionable `backend_not_configured`
+  error reporting rather than searching the job folder or process cwd;
+- optional preferences: blank `Backend Python` uses Blender's `sys.executable`,
+  while blank `Job Root` uses temporary job folders;
+- subprocess boundary: the bridge validates Backend Source, uses that trusted
+  folder as backend cwd, and passes the resolved absolute job folder only as a
+  command argument;
+- source confinement: backend source paths are normalized POSIX-relative paths
+  confined to the job root; rooted, drive-relative, UNC, traversal,
+  backslash-relative, non-normalized, directory, empty, symlink, and resolved
+  escape inputs fail closed;
+- source payloads: SceneSnapshot must be non-empty UTF-8 JSON with schema
+  version `1.0` and an object root, while OBJ/GLB scene assets remain opaque,
+  non-empty files;
+- backend outputs: the bridge accepts only non-empty, schema-compatible
+  diagnostics, DrawingIR, and SVG outputs whose diagnostics status and declared
+  files agree; malformed, stale, or partial outputs are failures;
+- identifiers and text: entity IDs are unique within each view, generated SVG
+  DOM IDs share the backend-owned `svg_ids.dom_id` helper across normal and
+  Image Assist SVG, and XML 1.0-invalid text is rejected before rendering;
+- Image Assist ownership: `image_assist.SUPPORTED_OVERLAY_TYPES` and
+  `image_assist.SUPPORTED_PRIMITIVES` are the only supported-type owners used by
+  job validation and composition;
+- Blender result reporting: any backend warning is reported as a Blender
+  warning. In particular, `projection_pending` never produces the ordinary
+  `Blueprint generated` success message;
+- result inspection: `Blueprints SVG Preview` remains the compatible Text
+  data-block name, but its contents are raw SVG source, not a rendered preview;
+- packaging: the add-on and backend remain two separate ZIPs. After installing
+  the add-on ZIP, the backend ZIP is extracted and Backend Source is set to the
+  extraction folder containing `blueprints_backend`;
+- packaged verification: packaging smoke executes the extracted backend ZIP
+  outside the checkout with clean `PYTHONPATH`, and Blender smoke covers both
+  blank and configured installed-package preferences;
+- version ownership: add-on `bl_info` owns `0.2.1`, backend `__version__` owns
+  `0.1.1`, and the Node harness package/lock own `0.1.0`; these independent
+  component versions are not a lockstep version. Data schemas remain `1.0`.
+
+I8 leaves CAD projection deferred: SceneSnapshot output still carries
+`projection_pending`. I8 does not add FreeCAD/TechDraw execution, a projection
+provider, hidden-line extraction, installers, Windows executable packaging,
+code signing, OCCT/C++ builds, or DXF/PDF/DWG exports.
+
 ## Iteration Boundaries
 
 - I1 owns backend CLI, job schema, DrawingIR, deterministic SVG, and diagnostics.
@@ -234,3 +288,6 @@ release artifacts.
 - I6 owns assistive relative image overlays.
 - I7 owns add-on zip, backend bundle, CI matrix, version stamping, crash logs,
   release docs, and packaging smoke.
+- I8 owns runtime contract hardening for source/output validation, SVG/XML
+  safety, add-on configuration and warning behavior, installed-package smoke,
+  and independent component version ownership.

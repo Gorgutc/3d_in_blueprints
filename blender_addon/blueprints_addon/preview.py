@@ -3,25 +3,30 @@ from pathlib import Path
 
 DIAGNOSTICS_TEXT_NAME = "Blueprints Diagnostics"
 SVG_TEXT_NAME = "Blueprints SVG Preview"
+TEXT_OUTPUTS = {
+    "diagnostics": DIAGNOSTICS_TEXT_NAME,
+    "svg": SVG_TEXT_NAME,
+}
 
 
-def load_outputs_into_text_blocks(bpy_module, job_dir):
-    root = Path(job_dir)
+def clear_output_text_blocks(bpy_module):
+    return {
+        output_name: write_text_block(bpy_module, text_name, "")
+        for output_name, text_name in TEXT_OUTPUTS.items()
+    }
+
+
+def load_outputs_into_text_blocks(bpy_module, approved_outputs):
     loaded = {}
-    diagnostics = root / "diagnostics.json"
-    svg = root / "sheet.svg"
-
-    if diagnostics.exists():
-        loaded["diagnostics"] = write_text_block(
+    for output_name, text_name in TEXT_OUTPUTS.items():
+        approved_path = approved_outputs.get(output_name)
+        if approved_path is None:
+            continue
+        path = Path(approved_path)
+        loaded[output_name] = write_text_block(
             bpy_module,
-            DIAGNOSTICS_TEXT_NAME,
-            diagnostics.read_text(encoding="utf-8"),
-        )
-    if svg.exists():
-        loaded["svg"] = write_text_block(
-            bpy_module,
-            SVG_TEXT_NAME,
-            svg.read_text(encoding="utf-8"),
+            text_name,
+            path.read_text(encoding="utf-8"),
         )
     return loaded
 

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "3d in Blueprints",
     "author": "Gorgutc",
-    "version": (0, 2, 0),
+    "version": (0, 2, 1),
     "blender": (5, 1, 0),
     "location": "View3D > Sidebar > Blueprints",
     "description": "Thin Blender client for the local 3d_in_blueprints backend.",
@@ -9,11 +9,11 @@ bl_info = {
 }
 
 import sys
-from pathlib import Path
 
 import bpy
 
 from . import bridge
+from . import operator_flow
 from . import preview
 
 
@@ -22,13 +22,13 @@ class BLUEPRINTS_AddonPreferences(bpy.types.AddonPreferences):
 
     backend_python: bpy.props.StringProperty(
         name="Backend Python",
-        description="Python executable used to run the local backend",
+        description="Python executable used to run the local backend; blank uses Blender Python",
         subtype="FILE_PATH",
         default="",
     )
     backend_source: bpy.props.StringProperty(
         name="Backend Source",
-        description="Path to backend/src for local development",
+        description="Folder containing blueprints_backend, such as backend/src or an extracted backend ZIP",
         subtype="DIR_PATH",
         default="",
     )
@@ -70,36 +70,23 @@ class BLUEPRINTS_OT_generate(bpy.types.Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        prefs = addon_preferences(context)
-        backend_python = prefs.backend_python or sys.executable
-        if prefs.backend_source:
-            backend_source = prefs.backend_source
-        else:
-            repo_root = bridge.find_repo_root(Path(__file__))
-            backend_source = str(repo_root / "backend" / "src")
-        job_root = prefs.job_root or None
-
-        try:
-            result = bridge.run_bridge(
-                bpy,
+        outcome = operator_flow.run_operator_flow(
+            clear_preview=lambda: preview.clear_output_text_blocks(bpy),
+            get_preferences=lambda: addon_preferences(context),
+            resolve_backend=resolve_operator_backend,
+            run_bridge=lambda preferences, backend_source: run_operator_bridge(
                 context,
-                backend_python=backend_python,
-                backend_src_path=backend_source,
-                export_format=prefs.export_format,
-                job_root=job_root,
-                timeout_seconds=prefs.timeout_seconds,
-            )
-            preview.load_outputs_into_text_blocks(bpy, result.job_dir)
-        except bridge.BridgeError as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
-        if result.returncode != 0:
-            self.report({"ERROR"}, f"Backend failed; diagnostics loaded from {result.job_dir}")
-            return {"CANCELLED"}
-
-        self.report({"INFO"}, f"Blueprint generated in {result.job_dir}")
-        return {"FINISHED"}
+                preferences,
+                backend_source,
+            ),
+            load_preview=lambda approved_outputs: preview.load_outputs_into_text_blocks(
+                bpy,
+                approved_outputs,
+            ),
+            bridge_error_type=bridge.BridgeError,
+        )
+        self.report({outcome.report_level}, outcome.report_message)
+        return {outcome.status}
 
 
 class BLUEPRINTS_PT_panel(bpy.types.Panel):
@@ -133,6 +120,22 @@ def addon_preferences(context):
     if addon is None:
         return DefaultBridgePreferences()
     return addon.preferences
+
+
+def resolve_operator_backend(preferences):
+    return bridge.resolve_backend_source(preferences.backend_source)
+
+
+def run_operator_bridge(context, preferences, backend_source):
+    return bridge.run_bridge(
+        bpy,
+        context,
+        backend_python=preferences.backend_python or sys.executable,
+        backend_src_path=backend_source,
+        export_format=preferences.export_format,
+        job_root=preferences.job_root or None,
+        timeout_seconds=preferences.timeout_seconds,
+    )
 
 
 def register():
