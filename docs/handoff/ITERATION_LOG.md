@@ -1619,3 +1619,65 @@ next_iteration_ready: false
 resume_prompt: Review draft PR #10 and remote CI. Merge only after approval;
   schedule P0b separately before starting the provider/projection iteration.
 ```
+
+```yaml
+iteration_id: I8-windows-ci-path-alias-fix
+status: PASS
+date: 2026-07-27
+scope_completed:
+  - Diagnosed the first draft-PR Windows CI failure as a logical-path spelling
+    mismatch between the long temporary path and its Windows 8.3 alias.
+  - Preserved approved-output paths with caller-visible absolute spelling while
+    retaining strict resolved-path confinement for security validation.
+  - Added a regression test for approved outputs whose resolved path uses an
+    alias, committed the fix as `98eeb37 Fix Windows approved output paths`,
+    and pushed it to draft PR #10.
+files_changed:
+  - blender_addon/blueprints_addon/bridge.py
+  - blender_addon/tests/test_bridge_unit.py
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: npm.cmd run test:backend
+    result: PASS
+    evidence: Backend `51 tests OK` with 4 privilege-dependent symlink skips;
+      add-on `36 tests OK` with 2 privilege-dependent symlink skips.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Plugin 214/214, governance 774/774, JS 11/11, infra 350/350,
+      backend and add-on suites, and packaging smoke all passed.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Blender 5.1.2 source and isolated installed two-ZIP smokes passed.
+  - command: GitHub Actions run 30253120977
+    result: PASS
+    evidence: Both `codex-infra (ubuntu-latest)` and
+      `codex-infra (windows-latest)` completed successfully for `98eeb37`.
+  - command: independent focused code and verification reviews
+    result: PASS
+    evidence: Reviewers confirmed logical path preservation without weakening
+      regular-file, non-symlink, or resolved-root confinement checks.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - The Windows runner no longer rewrites approved-output paths into an 8.3
+      alias that violates the public bridge-result contract.
+    - Physical output validation remains fail closed through strict resolution
+      inside the job root.
+    - Draft PR #10 has green Ubuntu and Windows CI on the runtime fix commit.
+  failed: []
+accepted_deviations:
+  - Six privilege-dependent symlink tests remain skipped on this Windows
+    account; hosted Ubuntu CI exercises the portable suite.
+explicit_defers:
+  - Merge remains owner-controlled; PR #10 stays draft.
+  - P0b instruction/tooling hardening and all previously recorded product and
+    distribution defers remain open.
+blockers: []
+risks_or_regressions:
+  - Hostile TOCTOU between output validation and later consumption remains an
+    explicit post-I8 hardening item.
+repo_state: draft PR #10 updated through `98eeb37`; Ubuntu and Windows CI pass
+next_iteration_ready: true
+resume_prompt: Review draft PR #10. If accepted, merge separately; otherwise
+  begin the P0b instruction/tooling hardening iteration on a fresh branch.
+```
