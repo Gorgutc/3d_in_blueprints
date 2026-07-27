@@ -1,7 +1,8 @@
 # Iteration Log
 
-This file is the session handoff ledger. Update it after every completed or
-blocked iteration so a later session can resume without reconstructing context.
+This file is an append-only historical iteration ledger. Entries preserve the
+evidence available when each iteration closed; they are not living project
+status and must not be rewritten to match later capabilities.
 
 ## Schema
 
@@ -1680,4 +1681,111 @@ repo_state: draft PR #10 updated through `98eeb37`; Ubuntu and Windows CI pass
 next_iteration_ready: false
 resume_prompt: Review final-head CI and draft PR #10. Merge only after explicit
   owner approval; schedule P0b separately after I8 closeout.
+```
+
+```yaml
+iteration_id: P0b-instruction-tooling-hardening
+status: PASS
+date: 2026-07-27
+scope_completed:
+  - Started from the owner-merged I8 main commit `190ad8f` on
+    `codex/p0b-instruction-tooling-hardening`.
+  - Made JavaScript root discovery and `node --check` execution deterministic
+    and fail closed for missing, unreadable, linked, escaped, empty, malformed,
+    signaled, timed-out, and status-less cases.
+  - Replaced PostToolUse text scanning with structured path extraction,
+    portable confinement, Win32 alias defenses, strongest-route selection,
+    `quality:deep` short-circuiting, and conditional Blender 5.1 smoke.
+  - Enforced exact package-script, CI, hook, Lefthook, native-hook, compatibility
+    pointer, and FD-001 through FD-014 topology with negative fixtures and
+    independent live assertions.
+  - Repaired active post-I8 instructions while preserving ADRs and the I1-I8
+    contracts as reference or append-only historical evidence.
+files_changed:
+  - scripts/check-js-syntax.mjs
+  - scripts/lib/js-syntax-checker.mjs
+  - scripts/lib/post-tool-routing.mjs
+  - scripts/run-blender-smoke.mjs
+  - scripts/verify-codex-infra.mjs
+  - scripts/check-governance.mjs
+  - scripts/verify-codex-plugin.mjs
+  - .codex/hooks.json
+  - .codex/hooks/post-tool-verify.js
+  - AGENTS.md
+  - README.md
+  - .codex/agents/*.toml
+  - plugins/blueprints-codex/skills/**
+  - docs/agent/**
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: npm.cmd run check:js
+    result: PASS
+    evidence: Required `scripts` and `.codex/hooks` inventory passed syntax
+      checking with 0 FAIL.
+  - command: npm.cmd run check:governance
+    result: PASS
+    evidence: Active/reference/historical tiering, stale wording, profile
+      states, pointer-only files, and negative governance fixtures passed with
+      0 FAIL.
+  - command: npm.cmd run codex:verify-plugin
+    result: PASS
+    evidence: Exact skill inventory, frontmatter, metadata, and `$skill-name`
+      prompts passed with 0 FAIL.
+  - command: npm.cmd run verify
+    result: PASS
+    evidence: Behavioral, topology, hook-routing, Blender-mode, frozen-decision,
+      and direct I8 invariants passed with 0 FAIL.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Fast gates, backend and add-on stdlib suites, and extracted
+      backend packaging smoke passed.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Blender 5.1.2 passed source bridge and isolated installed
+      add-on/two-ZIP smoke.
+  - command: requirements and diff review fallback
+    result: PASS
+    evidence: Independent requirements, code, deadwood, reuse, instruction,
+      Blender, Windows, visual-N/A, verification, and lookahead roles reviewed
+      the final P0b diff because `/review` was unavailable.
+  - command: git diff --check
+    result: PASS
+    evidence: No whitespace errors were found.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - Required JavaScript roots and every specified local process failure mode
+      fails closed.
+    - PostToolUse rejects malformed or escaped paths and chooses the strongest
+      route for multi-file changes.
+    - Normal Blender smoke is strict; conditional smoke defers only an
+      unconfigured, auto-missing Blender 5.1 executable.
+    - Public commands, CI, hook topology, frozen decisions, and profile states
+      have exact guarded parity.
+    - Product versions, schemas, runtime contracts, and two-ZIP layout remain
+      unchanged.
+  failed: []
+accepted_deviations:
+  - Four backend and two add-on symlink tests remain skipped on this
+    unprivileged Windows account; portable hosted CI retains coverage.
+  - P0b has no visual delta, so visual acceptance is N/A by the trigger-based
+    contract and no screenshots were generated.
+explicit_defers:
+  - FreeCAD/TechDraw provider-contract design requires separate owner approval.
+  - Projection, hidden-line extraction, atomic publication, process-tree policy,
+    GLB smoke expansion, Windows EXE/installers/signing, and public release.
+  - Optional tooling cleanup: narrow unnecessary internal exports, modularize the
+    large verifier when a later slice needs it, and deduplicate compatibility
+    pointer literals without weakening independent guards.
+blockers: []
+risks_or_regressions:
+  - The conditional Blender hook can legitimately report `[DEFER]` on a machine
+    with no explicit or discoverable Blender 5.1; strict delivery remains a
+    separate required command for Blender-sensitive changes.
+repo_state: implementation verified on codex/p0b-instruction-tooling-hardening;
+  commit, push, draft PR, and paired Second Brain publication follow this entry
+next_iteration_ready: true
+resume_prompt: Review the published P0b draft PR. The next owner-approved work
+  is design of the FreeCAD/TechDraw provider contract, not provider runtime
+  implementation.
 ```

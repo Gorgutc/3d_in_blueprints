@@ -26,21 +26,29 @@ standalone backend.
 - GPL-sensitive dependencies: allowed only across a separate
   process/distribution boundary.
 
-## Required Add-on Decisions
+## Current Implemented Contract
 
-Before product add-on code lands, the implementation iteration must define:
+- `bl_info`, Blender 5.1 compatibility, registration, preferences, operator,
+  panel, SceneSnapshot/OBJ/GLB export, and the subprocess job-folder bridge are
+  implemented under `blender_addon/blueprints_addon/**`.
+- Backend validation, DrawingIR, GOST composition, dimensions, standards,
+  Image Assist, diagnostics, SVG, and their stdlib tests are implemented under
+  `backend/src/blueprints_backend/**` and `backend/tests/**`.
+- Product packaging consists of two separate ZIPs: the installed add-on and an
+  extracted backend whose parent folder is selected as Backend Source.
+- `Blueprints SVG Preview` contains raw SVG source, not a rendered preview.
+- Projection remains deferred behind the future FreeCAD/TechDraw provider
+  contract, together with hidden-line extraction; `projection_pending` is an
+  expected warning, not ordinary generation success.
+- The Windows EXE, installer, and signing toolchain remains dormant. It is
+  separate from the active two-ZIP add-on/backend packaging.
+- Visual evidence is required only for changes to Blender UI, rendered SVG or
+  overlays, or visual assets.
 
-- `bl_info` ownership and Blender 5.1 compatibility fields;
-- Python package layout and add-on entrypoint;
-- registration and unregistration contract;
-- SceneSnapshot JSON schema and OBJ/GLB export contract;
-- backend subprocess command, job folder layout, timeout, and error handling;
-- SVG/diagnostics preview behavior;
-- background Blender smoke command;
-- packaging and release zip format activation, or an explicit deferral to the
-  packaging iteration;
-- add-on preferences and asset paths;
-- artifact handling in `DO_NOT_PUSH.md`.
+## Historical Iteration Contracts
+
+The I1-I8 sections below are append-only evidence of accepted iteration scope.
+They do not override the current implemented contract above.
 
 ## I1 Backend Contract
 

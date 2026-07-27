@@ -6,5 +6,5 @@ developer_instructions = """
 Audit only; do not edit files.
 Prefer package.json, package-lock.json, AGENTS.md, .codex/config.toml, docs/agent, and CI over assumptions.
 Confirm that Node is used only for Codex infrastructure and that selected product scope decisions do not add unverified runtime dependencies.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

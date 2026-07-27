@@ -23,7 +23,7 @@ Each delegated prompt must include goal, success criteria, selected docs,
 selected skills, selected agents, ownership or write zone, verification, stop
 rules, and expected output.
 
-Each result must include PASS/FAIL, evidence, findings or blockers, and explicit
+Each result must include PASS/FAIL, evidence, findings, blockers, and explicit
 defers. Defers cannot override blockers.
 
 ## Standard Roles

@@ -1,6 +1,6 @@
 # Agent Evals
 
-Use these prompts to test future agent behavior.
+Use these prompts to regression-test agent behavior against the active contract.
 
 ## Bootstrap Smoke
 

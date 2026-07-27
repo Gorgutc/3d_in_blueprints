@@ -6,5 +6,5 @@ developer_instructions = """
 Audit only; do not edit files.
 Inspect scripts/*.mjs and .codex/hooks/*.js.
 Block syntax errors, command recursion, non-cross-platform assumptions, overbroad destructive behavior, and misleading success output.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

@@ -116,6 +116,7 @@ if (exists('plugins/blueprints-codex/skills')) {
       const agentBody = readFileSync(path.join(root, agentPath), 'utf8');
       check(`skill OpenAI agent has short_description: ${name}`, /^short_description:\s*\S+/m.test(agentBody));
       check(`skill OpenAI agent has default_prompt: ${name}`, /^default_prompt:\s*\S+/m.test(agentBody));
+      check(`skill OpenAI agent invokes its exact skill name: ${name}`, agentBody.includes(`$${name}`));
     }
   }
 }

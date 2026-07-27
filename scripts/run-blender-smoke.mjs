@@ -12,20 +12,39 @@ const packagedSmokeScript = path.join(root, 'blender_addon', 'tests', 'smoke_ble
 const blenderTimeoutMs = positiveInteger(process.env.BLUEPRINTS_BLENDER_SMOKE_TIMEOUT_MS, 180_000);
 const packageTimeoutMs = positiveInteger(process.env.BLUEPRINTS_PACKAGE_SMOKE_TIMEOUT_MS, 60_000);
 
-process.exitCode = main();
-
-function main() {
-  const blender = resolveBlender();
-  if (!blender) {
-    console.error('Blender 5.1 was not found or could not be launched. Set BLENDER_EXE to the Blender 5.1 executable.');
+export function main({
+  argv = process.argv.slice(2),
+  blenderResolver = resolveBlender,
+  env = process.env,
+  logger = console,
+  smokeRunner = runResolvedBlenderSmoke,
+} = {}) {
+  let mode;
+  try {
+    mode = parseSmokeArguments(argv);
+  } catch (error) {
+    logger.error(`[FAIL] ${error.message}`);
     return 1;
   }
 
-  const version = blenderVersion(blender);
-  if (!/\bBlender 5\.1\b/.test(version)) {
-    console.error(`Expected Blender 5.1, got: ${firstLine(version)}`);
+  const resolution = blenderResolver({ env });
+  if (resolution.error) {
+    logger.error(`[FAIL] ${resolution.error}`);
     return 1;
   }
+  if (!resolution.command) {
+    if (mode.ifAvailable) {
+      logger.log('[DEFER] Blender 5.1 is unavailable; conditional smoke was not run. Set BLENDER_EXE to require a specific executable.');
+      return 0;
+    }
+    logger.error('Blender 5.1 was not found or could not be launched. Set BLENDER_EXE to the Blender 5.1 executable.');
+    return 1;
+  }
+
+  return smokeRunner({ blender: resolution.command, version: resolution.version });
+}
+
+function runResolvedBlenderSmoke({ blender, version }) {
   console.log(`[INFO] ${firstLine(version)}`);
 
   const sourceEnv = {
@@ -217,26 +236,55 @@ function runCommand(command, args, { cwd, env, label, timeoutMs }) {
   return true;
 }
 
-function resolveBlender() {
+export function parseSmokeArguments(argv) {
+  if (!Array.isArray(argv)) throw new TypeError('Blender smoke arguments must be an array.');
+  if (argv.length === 0) return { ifAvailable: false };
+  if (argv.length === 1 && argv[0] === '--if-available') return { ifAvailable: true };
+  throw new Error(`Unknown Blender smoke argument: ${argv.join(' ')}`);
+}
+
+export function resolveBlender({
+  env = process.env,
+  platform = process.platform,
+  exists = existsSync,
+  probe = probeBlender,
+  listProgramFiles = programFilesBlender51,
+} = {}) {
+  const configured = typeof env.BLENDER_EXE === 'string' ? env.BLENDER_EXE.trim() : '';
+  if (configured) {
+    const candidate = normalizeBlenderCandidate(configured, exists);
+    if (!candidate) {
+      return { command: null, error: `Configured BLENDER_EXE does not exist: ${configured}`, version: '' };
+    }
+    const inspected = probe(candidate);
+    if (!inspected.ok) {
+      return { command: null, error: `Configured BLENDER_EXE could not be launched: ${inspected.detail}`, version: '' };
+    }
+    if (!/\bBlender 5\.1\b/.test(inspected.version)) {
+      return { command: null, error: `Configured BLENDER_EXE must be Blender 5.1, got: ${firstLine(inspected.version)}`, version: inspected.version };
+    }
+    return { command: candidate, error: null, version: inspected.version };
+  }
+
   const candidates = [];
-  if (process.env.BLENDER_EXE) candidates.push(process.env.BLENDER_EXE);
-  if (process.platform === 'win32') {
+  if (platform === 'win32') {
     candidates.push(
       'C:\\Program Files\\Blender Foundation\\Blender 5.1\\blender.exe',
       'C:\\Program Files\\Blender Foundation\\Blender-5.1-DLSS-Package\\blender.exe',
     );
-    candidates.push(...programFilesBlender51());
+    candidates.push(...listProgramFiles());
   }
   candidates.push('blender');
 
   for (const rawCandidate of unique(candidates)) {
-    const isPath = isPathLikeBlenderCandidate(rawCandidate);
-    const candidate = isPath ? path.resolve(root, rawCandidate) : rawCandidate;
-    if (isPath && !existsSync(candidate)) continue;
-    const version = blenderVersion(candidate);
-    if (/\bBlender 5\.1\b/.test(version)) return candidate;
+    const candidate = normalizeBlenderCandidate(rawCandidate, exists);
+    if (!candidate) continue;
+    const inspected = probe(candidate);
+    if (inspected.ok && /\bBlender 5\.1\b/.test(inspected.version)) {
+      return { command: candidate, error: null, version: inspected.version };
+    }
   }
-  return null;
+  return { command: null, error: null, version: '' };
 }
 
 function isPathLikeBlenderCandidate(candidate) {
@@ -254,14 +302,25 @@ function programFilesBlender51() {
   }
 }
 
-function blenderVersion(executable) {
+function normalizeBlenderCandidate(rawCandidate, exists) {
+  const isPath = isPathLikeBlenderCandidate(rawCandidate);
+  const candidate = isPath ? path.resolve(root, rawCandidate) : rawCandidate;
+  if (isPath && !exists(candidate)) return null;
+  return candidate;
+}
+
+export function probeBlender(executable) {
   const result = spawnSync(executable, ['--version'], {
     encoding: 'utf8',
     timeout: 30_000,
     windowsHide: true,
   });
-  if (result.status !== 0) return '';
-  return `${result.stdout || ''}${result.stderr || ''}`;
+  if (result.error) return { detail: result.error.message, ok: false, version: '' };
+  if (result.signal) return { detail: `terminated by ${result.signal}`, ok: false, version: '' };
+  if (result.status !== 0) {
+    return { detail: `exited with status ${result.status ?? '<none>'}`, ok: false, version: '' };
+  }
+  return { detail: '', ok: true, version: `${result.stdout || ''}${result.stderr || ''}` };
 }
 
 function resolvePython() {
@@ -337,6 +396,10 @@ function cleanupPythonCaches() {
   for (const rel of ['backend', 'blender_addon']) {
     removeCacheDirs(path.join(root, rel));
   }
+}
+
+if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
+  process.exitCode = main();
 }
 
 function removeCacheDirs(dir) {

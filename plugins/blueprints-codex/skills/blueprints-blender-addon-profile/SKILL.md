@@ -11,11 +11,12 @@ The Blender add-on profile is active for the selected product scope.
 
 ## Checks
 
-Before product add-on code lands, require Blender version support, addon
-entrypoint, package layout, background test command, artifact policy, backend
-bridge contract, and iteration-scoped user approval.
+Verify the implemented Blender 5.1 entrypoint, package layout, preferences,
+operator/panel adapter, trusted backend bridge, two-ZIP packaging, background
+source and installed-package smoke, and artifact policy for affected paths.
 
-For I7 packaging work, allow add-on zip and backend bundle smoke only inside the
-active Blender add-on + backend scope. Do not activate Windows executable
-packaging, installers, code signing, compilers, or generated committed release
-artifacts without an explicit future iteration.
+`npm run test:blender` is strict. The PostToolUse route may use
+`npm run test:blender -- --if-available` only after `quality:deep`. Keep CAD
+projection, rendered preview, Windows executable packaging, installers, code
+signing, compilers, and committed release artifacts deferred unless a current
+approved capability contract activates them.

@@ -1,13 +1,15 @@
 ---
 name: blueprints-assets
-description: Use when future work involves images, models, Blender assets, generated artifacts, installer assets, icons, screenshots, or media provenance.
+description: Use when a task changes images, models, Blender assets, generated artifacts, installer assets, icons, screenshots, or media provenance.
 ---
 
 # Blueprints Assets
 
 ## Overview
 
-No product assets are active yet.
+Use this skill only when the task touches visual or generated assets. Backend
+job outputs, release ZIPs, and Blender screenshots remain temporary or ignored
+unless the current request explicitly approves a committed fixture.
 
 ## Rules
 

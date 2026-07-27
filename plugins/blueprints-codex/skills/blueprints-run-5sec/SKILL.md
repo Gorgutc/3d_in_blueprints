@@ -1,6 +1,6 @@
 ---
 name: blueprints-run-5sec
-description: Use when the user asks for a five-second visual impression test or when a future major visual change needs quick rendered first-impression review.
+description: Use when the user asks for a five-second visual impression test or a major visual change needs quick rendered first-impression review.
 ---
 
 # Blueprints Run 5-Second Review

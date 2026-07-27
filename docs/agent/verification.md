@@ -29,8 +29,16 @@ The gate checks:
 - `.codex` agents, hooks, and Windows command entries;
 - active Blender add-on profile docs and dormant Windows executable profile docs;
 - governance against stale source-repo rules and old pass totals;
-- CI presence and command order;
-- iteration handoff log presence.
+- exact package-script graph, CI topology, hook configuration, Lefthook/native
+  parity, compatibility pointers, and frozen-decision live projections;
+- structural PostToolUse classification for path lists, MultiEdit and
+  apply_patch payloads, including malformed payloads, traversal, drive, UNC,
+  Win32 aliases, strongest-route selection, short-circuiting, and propagated
+  command failures;
+- fail-closed JavaScript discovery and process handling for missing, unreadable,
+  symlinked, escaped, empty, invalid-syntax, error, signal, null-status, timeout,
+  and empty-output cases;
+- append-only historical handoff log presence.
 - backend CLI, DrawingIR, SVG, and diagnostics behavior covered by Python
   stdlib `unittest` tests.
 - GOST v1 sheet composition covered by backend golden SVG tests.
@@ -42,30 +50,30 @@ The gate checks:
 - Image Assist v1 covered by backend fixture tests for relative overlay SVG
   output, diagnostics output registration, unsupported overlay warnings, and
   rejection of absolute overlay coordinates without explicit scale.
-- I7 packaging and hardening covered by backend crash-log diagnostics tests,
+- Packaging and crash hardening covered by backend crash-log diagnostics tests,
   packaging manifest tests, and `npm run test:packaging` temporary artifact
   smoke.
-- I8 backend negative contracts in `backend/tests/test_job_contracts.py` cover
+- Backend negative contracts in `backend/tests/test_job_contracts.py` cover
   normalized POSIX-relative source paths; POSIX/Windows rooted, drive-relative,
   UNC, traversal, backslash-relative, and non-normalized rejection; missing,
   directory, empty, symlink, and resolved-escape sources; SceneSnapshot
   UTF-8/JSON/object/schema validation; entity-ID and layer rules; and XML
   1.0-invalid text rejection.
-- I8 SVG-ID cases in `backend/tests/test_svg_ids.py` cover injective namespaces
+- SVG-ID cases in `backend/tests/test_svg_ids.py` cover injective namespaces
   across views/entities/dimensions/sheet elements, Image Assist part-collision
   resistance, logical-ID trace attributes, deterministic output, invalid XML
   text rejection, and preservation of legacy non-ID SVG structure.
-- I8 bridge and operator unit cases cover explicit Backend Source package
+- Bridge and operator unit cases cover explicit Backend Source package
   entrypoints, installed add-on blank-configuration failure, trusted backend
   cwd plus an absolute job argument, malformed/empty/partial backend outputs,
   warning-only operator completion, `projection_pending` without false success,
   and stale Text data-block invalidation.
-- I8 packaging smoke extracts the backend ZIP outside the checkout, clears
+- Packaging smoke extracts the backend ZIP outside the checkout, clears
   inherited `PYTHONPATH`, runs `python -m blueprints_backend` from the extracted
   backend root, and validates its three declared outputs.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
-- The I8 Blender 5.1 smoke includes both source and installed-package cases. Its
+- The Blender 5.1 smoke includes both source and installed-package cases. Its
   blank-configuration case enables the real installed add-on with default
   preferences and requires `backend_not_configured`, `CANCELLED`, and zero
   job/export side effects. Its configured case extracts the backend ZIP, sets
@@ -76,7 +84,10 @@ The gate checks:
 
 `codex:ship` remains CI-safe and does not load Blender. The explicit
 `test:blender` command loads Blender 5.1 in background mode for bridge
-changes. `test:packaging` packages the add-on and backend only inside a
+changes. `test:blender -- --if-available` is reserved for PostToolUse and emits
+`[DEFER]` with exit 0 only when `BLENDER_EXE` is unset and Blender 5.1 cannot be
+auto-discovered. An explicit missing, unlaunchable, or wrong-version executable
+always fails. `test:packaging` packages the add-on and backend only inside a
 temporary directory and does not commit generated artifacts. The gates do not
 run a browser, compile an executable, build installers, invoke
 FreeCAD/TechDraw, or generate committed product artifacts.

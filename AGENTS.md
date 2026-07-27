@@ -6,14 +6,18 @@ file for Codex and other coding agents.
 ## Current State
 
 - Product scope is selected: Blender add-on + local standalone backend.
+- The Blender add-on, preferences, operator, panel, backend bridge, backend
+  composition pipeline, diagnostics, raw SVG Text inspection, and separate
+  add-on/backend ZIP packaging are implemented.
 - The Blender add-on is a thin client. The standalone backend is the source of
-  truth for projection, hidden-line extraction, sheet composition, dimensions,
-  diagnostics, and exports.
+  truth for sheet composition, dimensions, diagnostics, and exports. Projection
+  and hidden-line extraction remain behind the deferred provider boundary.
 - The Node package in this repo is a verification command harness, not the
   product runtime.
-- The `blender-addon` profile is active for planning and future product
-  iterations. The `windows-exe` profile remains dormant until a future Windows
-  executable packaging request explicitly activates it.
+- The `blender-addon` profile is active for the implemented product and future
+  approved capability iterations. The `windows-exe` profile remains dormant;
+  two-ZIP product packaging does not activate an EXE, installer, or signing
+  toolchain.
 - Do not create product source code, runtime dependencies, installers, browser
   gates, Blender packages, or generated artifacts outside the current accepted
   iteration scope.
@@ -21,11 +25,19 @@ file for Codex and other coding agents.
 ## Authority Order
 
 current user request > AGENTS.md > scripts/verify-codex-infra.mjs and
-scripts/check-governance.mjs > repo-local skills > docs/profile references.
+scripts/check-governance.mjs > repo-local skills > current `docs/agent`,
+`docs/release`, and root project references.
 
 Do not promote source-repository rules, legacy Claude workflow, framework
 choices, UI kits, static-site assumptions, or old pass totals into active policy
 unless they are rewritten here for this repository and verified.
+
+Active instructions are `AGENTS.md`, `.codex/**`, `.agents/**`, repo-local
+skills, root compatibility/project docs, `docs/release/**`, package scripts,
+hooks, CI, and every current `docs/agent/**` surface except ADRs and migration
+inventory. ADRs and migration inventory are reference records.
+`docs/handoff/**` and the marked I1-I8 profile contracts are append-only
+historical evidence, not current policy.
 
 ## Required Skills
 
@@ -83,8 +95,11 @@ npm run codex:ship
 ```
 
 `npm run codex:ship` is mandatory before commit, push, PR, or final delivery of
-agent-infrastructure or product changes. `npm run test:blender` is required for
-Blender add-on bridge changes when Blender 5.1 is available locally.
+agent-infrastructure or product changes. `npm run test:blender` is the strict
+Blender 5.1 gate for Blender-sensitive delivery. PostToolUse may call
+`npm run test:blender -- --if-available` only after `quality:deep`; it may defer
+only when Blender was not explicitly configured and no Blender 5.1 executable
+is discoverable.
 `npm run test:packaging` is required for release packaging changes and is part
 of `quality:deep`.
 
@@ -96,6 +111,9 @@ of `quality:deep`.
 - `/review` is run before final delivery when available. If `/review` is not
   available, perform the equivalent requirements and diff review and label it as
   the fallback.
+- Visual evidence is required only when Blender UI, rendered SVG/overlay output,
+  or visual assets change. Raw SVG in a Text block is not rendered-preview
+  evidence.
 - No compiler, installer, Blender package, browser test stack, runtime
   dependency, or generated product artifact is introduced unless the current
   iteration explicitly requires it and matching verification is updated.

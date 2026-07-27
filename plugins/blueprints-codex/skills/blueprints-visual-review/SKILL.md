@@ -1,6 +1,6 @@
 ---
 name: blueprints-visual-review
-description: Use when reviewing future rendered visuals, screenshots, previews, first impressions, layout quality, or visual acceptance criteria.
+description: Use when reviewing rendered SVG or overlays, Blender UI screenshots, previews, visual assets, first impressions, layout quality, or visual acceptance criteria.
 ---
 
 # Blueprints Visual Review

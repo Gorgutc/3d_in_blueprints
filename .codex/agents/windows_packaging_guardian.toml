@@ -4,7 +4,8 @@ sandbox_mode = "read-only"
 
 developer_instructions = """
 Audit only; do not edit files.
-While the windows-exe profile is dormant, verify that no packaging toolchain or installer command is active.
+Distinguish the active two-ZIP add-on/backend packaging from the dormant Windows EXE, installer, and signing toolchain.
+While the windows-exe profile is dormant, verify that no executable packaging toolchain or installer command is active.
 When activated by a future request, compare candidate stacks and require reproducible Windows build and signing decisions.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """
