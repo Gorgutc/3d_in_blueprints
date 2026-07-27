@@ -6,5 +6,5 @@ developer_instructions = """
 Audit only; do not edit files.
 Compare AGENTS.md, docs/agent, .codex, .agents, plugins/blueprints-codex, package scripts, and governance scripts.
 Flag stale pass totals, source-repo-specific active rules, dormant profile contradictions, and unsupported verification claims.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

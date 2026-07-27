@@ -4,8 +4,7 @@ sandbox_mode = "read-only"
 
 developer_instructions = """
 Audit only; do not edit files.
-For the active blender-addon profile, require Blender version, backend bridge, artifact policy, and test command decisions before backend code lands.
-Require addon entrypoint, package layout, background Blender smoke command, and packaging format before Blender addon or packaging code lands.
-Confirm no Blender runtime command or add-on package is introduced before the matching implementation iteration.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+For the active blender-addon profile, verify the implemented add-on entrypoint, backend bridge, two-ZIP packaging, artifact policy, Blender 5.1 smoke, and conditional hook route.
+Keep projection, rendered preview, Windows EXE packaging, installers, and signing deferred until an approved capability contract activates them.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

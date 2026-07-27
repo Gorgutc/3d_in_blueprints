@@ -7,16 +7,15 @@ technical drawings from 3D scene data.
 
 - Product scope: Blender add-on thin client + Python-first local backend.
 - Active profile: `blender-addon`.
-- Dormant profile: `windows-exe`, until a future Windows executable packaging
-  request explicitly activates it.
-- Implemented slices: I1 backend CLI + DrawingIR + deterministic SVG +
-  diagnostics; I2 Blender Bridge thin-client smoke; I3 GOST Composer v1;
-  I4 Dimensions v1; I5 Standards DB v1; I6 Image Assist v1; I7 Packaging +
-  Hardening; I8 Runtime Contract Hardening.
-- Not implemented yet: FreeCAD/TechDraw execution, DXF/PDF, DWG, installers,
-  Windows executable packaging.
+- Implemented: backend CLI, DrawingIR, deterministic SVG, diagnostics, Blender
+  bridge and panel, GOST composition, explicit dimensions, standards matching,
+  Image Assist, fail-closed runtime validation, and two-ZIP packaging.
+- Dormant profile: `windows-exe`. The current add-on/backend ZIPs do not activate
+  Windows executable packaging, installers, or signing.
+- Deferred: FreeCAD/TechDraw projection provider, hidden-line extraction,
+  rendered preview, DXF/PDF/DWG, installers, and Windows executable packaging.
 
-## Backend I1 Contract
+## Backend Runtime
 
 The backend is currently a stdlib-only Python package under
 `backend/src/blueprints_backend`.
@@ -43,14 +42,14 @@ The job folder contract is:
 - input: `job.json`
 - outputs: `drawing_ir.json`, `sheet.svg`, `diagnostics.json`
 
-I1 supports line entities in DrawingIR. Unsupported entity types are skipped and
+The backend supports line entities in DrawingIR. Unsupported entity types are skipped and
 reported as diagnostics warnings when a valid sheet can still be emitted.
 
-## Blender I2 Bridge
+## Blender Add-on Bridge
 
 The Blender add-on source lives under `blender_addon/blueprints_addon`.
 
-I2 provides:
+The add-on provides:
 
 - `bl_info` for Blender 5.1;
 - add-on preferences for backend Python, backend source, job root, export
@@ -69,15 +68,15 @@ SceneSnapshot jobs still end with the `projection_pending` warning because CAD
 projection is not implemented. The operator reports that warning and does not
 claim that a blueprint was generated.
 
-I2 does not add add-on packaging, FreeCAD/TechDraw execution, CAD projection, or
-DXF/PDF/DWG exports.
+CAD projection, hidden-line extraction, rendered preview, and DXF/PDF/DWG
+exports remain deferred.
 
-## GOST I3 Composer
+## GOST Sheet Composition
 
 The backend now supports an opt-in GOST v1 sheet composer through
 `sheet.standard: "GOST"` in `job.json`.
 
-I3 provides:
+The composer provides:
 
 - A4 GOST frame margins;
 - backend-owned title block grid and title metadata rendering;
@@ -87,16 +86,14 @@ I3 provides:
 - deterministic golden SVG coverage for GOST output.
 
 The Blender bridge requests GOST sheet composition in its backend job payload
-but still does not synthesize drawing entities. I3 does not add FreeCAD/TechDraw
-projection, dimensions, standards DB, image assist, packaging, or derived
-DXF/PDF/DWG exports.
+but still does not synthesize projection-derived drawing entities.
 
-## Dimensions I4 V1
+## Explicit Dimensions
 
 The backend now supports explicit basic dimension annotations on each view
 through `view.dimensions[]` in `job.json`.
 
-I4 provides:
+The dimension pipeline provides:
 
 - DrawingIR dimension records on a dedicated `dimension` layer;
 - deterministic SVG rendering for basic linear, diameter, radius, hole, and
@@ -106,16 +103,17 @@ I4 provides:
   valid supported dimensions still render;
 - golden SVG coverage for a dimensioned A4 GOST job.
 
-I4 does not infer dimensions from projected geometry, does not add angular or
-ordinate dimensions, tolerances, detailed GOST dimension rules, standards DB,
-image assist, packaging, or derived DXF/PDF/DWG exports.
+It does not infer dimensions from projected geometry and does not implement
+angular or ordinate dimensions, tolerances, detailed GOST dimension rules, or
+derived DXF/PDF/DWG exports. Standards Matching, Image Assist, and packaging are
+separate implemented subsystems.
 
-## Standards DB I5 V1
+## Standards Matching
 
 The backend now supports a narrow, backend-owned fastener standards matcher
 through `standards.fastener_matches[]` in `job.json`.
 
-I5 provides:
+The standards matcher provides:
 
 - a local stdlib-only starter fastener catalog for `bolt`, `nut`, and `washer`
   families;
@@ -127,16 +125,17 @@ I5 provides:
 - backend tests covering matches, warnings, and unchanged SVG output.
 
 The starter data is project-authored, non-normative metadata for matcher
-plumbing; no third-party standards table is copied. I5 does not add exact
-standards geometry, automatic fastener detection, BOM generation, image assist,
-packaging, FreeCAD/TechDraw execution, or derived DXF/PDF/DWG exports.
+plumbing; no third-party standards table is copied. It does not implement exact
+standards geometry, automatic fastener detection, BOM generation,
+FreeCAD/TechDraw execution, or derived DXF/PDF/DWG exports. Image Assist and
+packaging are separate implemented subsystems.
 
-## Image Assist I6 V1
+## Image Assist
 
 The backend now supports explicit assistive image overlays through
 `image_assist` in `job.json`.
 
-I6 provides:
+Image Assist provides:
 
 - assistive mode only, with no automatic absolute measurement inference;
 - relative contour overlays through `contour.points_rel`;
@@ -150,16 +149,16 @@ I6 provides:
 - diagnostics warnings for unsupported overlay or primitive types, which are
   skipped while valid assist overlays still render.
 
-I6 is stdlib-only and does not add computer-vision dependencies, image
-classification, automatic scale calibration, FreeCAD/TechDraw execution,
-packaging, or derived DXF/PDF/DWG exports.
+Image Assist is stdlib-only and does not add computer-vision dependencies, image
+classification, automatic scale calibration, FreeCAD/TechDraw execution, or
+derived DXF/PDF/DWG exports. Packaging is a separate implemented subsystem.
 
-## Packaging + Hardening I7
+## Two-ZIP Packaging
 
 The repository now has stdlib-only release packaging for the active Blender
 add-on + backend scope.
 
-I7 provides:
+The packaging pipeline provides:
 
 - add-on zip packaging from `blender_addon/blueprints_addon`;
 - backend bundle zip packaging from `backend/src/blueprints_backend`;
@@ -182,13 +181,13 @@ Create local release artifacts when needed:
 python scripts/package_release.py --output-dir dist
 ```
 
-Generated release folders and zips must not be committed. I7 does not add
+Generated release folders and zips must not be committed. This packaging does not add
 installers, code signing, Windows executable packaging, FreeCAD/TechDraw
 execution, OCCT/C++ builds, or derived DXF/PDF/DWG exports.
 
-## Runtime Contract Hardening I8
+## Runtime Contract Hardening
 
-I8 makes the existing add-on/backend boundary fail closed without adding CAD
+The existing add-on/backend boundary fails closed without adding CAD
 projection or a new runtime stack. It hardens source-path confinement, backend
 output validation, XML/SVG identifiers and text, add-on configuration errors,
 warning reporting, release-package execution, and component version ownership.
@@ -233,7 +232,7 @@ backend `0.1.1`, and Node verification harness `0.1.0`; data schemas remain
 `1.0`. These versions are owned separately and are not a lockstep product
 version.
 
-I8 still leaves SceneSnapshot projection pending. A successful backend process
+SceneSnapshot projection remains pending. A successful backend process
 may therefore produce `projection_pending`; Blender reports it as a warning,
 does not show `Blueprint generated`, and keeps `Blueprints SVG Preview` as raw
 SVG source rather than a rendered viewport preview.
@@ -253,9 +252,13 @@ npm run codex:ship
 `codex:ship` runs the Codex infrastructure gates plus the stdlib backend and
 bridge unit tests plus packaging smoke through `quality:deep`. `test:blender`
 is an explicit local Blender 5.1 background smoke; set `BLENDER_EXE` when
-Blender 5.1 is not on the standard Windows install path.
+Blender 5.1 is not on the standard Windows install path. PostToolUse may call
+`npm run test:blender -- --if-available` after `quality:deep`; that conditional
+route defers only when Blender was not explicitly configured and cannot be
+auto-discovered.
 
 ## Handoff
 
-Iteration state is recorded in `docs/handoff/ITERATION_LOG.md`. Update it after
-each completed, failed, or blocked iteration before continuing in a new session.
+`docs/handoff/ITERATION_LOG.md` is append-only historical evidence, not a living
+status page. Add an entry after each completed or blocked iteration so a later
+session can reconstruct the verified state.

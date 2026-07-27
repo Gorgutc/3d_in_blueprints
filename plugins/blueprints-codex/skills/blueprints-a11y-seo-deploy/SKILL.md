@@ -1,15 +1,17 @@
 ---
 name: blueprints-a11y-seo-deploy
-description: Use when future work involves accessibility, keyboard behavior, metadata, SEO, deployment, release readiness, or public distribution.
+description: Use when a task changes accessibility, keyboard behavior, metadata, SEO, deployment, release readiness, or public distribution.
 ---
 
 # Blueprints A11y SEO Deploy
 
 ## Overview
 
-No deploy target is active yet.
+This skill is trigger-based. The Blender add-on is active, while public release
+and deployment targets remain deferred.
 
 ## Rules
 
-When a product profile is activated, define accessibility, metadata, installer,
-release, and deployment checks before claiming readiness.
+When the task touches these capabilities, define the relevant Blender UI
+accessibility, metadata, installer, release, or deployment checks before
+claiming readiness.

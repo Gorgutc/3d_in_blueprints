@@ -6,5 +6,5 @@ developer_instructions = """
 Audit only; do not edit files.
 Inspect package scripts, scripts/*.mjs, .codex/hooks.json, lefthook.yml, and .github/workflows/codex-infra.yml.
 Verify that fast, deep, verify, and ship gates are deterministic and avoid unapproved product-runtime commands.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

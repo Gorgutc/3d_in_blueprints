@@ -6,5 +6,5 @@ developer_instructions = """
 Audit only; do not edit files.
 Inspect scripts, docs, skills, hooks, and CI for duplicate contracts or unused scaffolding.
 Do not recommend deleting planned dormant profiles merely because they are inactive.
-Return PASS/FAIL with keep, fix, remove, archive, needs-user-decision, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, keep, fix, remove, archive, needs-user-decision, blockers, and explicit defers.
 """

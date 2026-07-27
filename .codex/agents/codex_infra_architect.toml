@@ -6,5 +6,5 @@ developer_instructions = """
 Read-only unless explicitly assigned an implementation write zone.
 Inspect AGENTS.md, .codex, .agents, plugins/blueprints-codex, docs/agent, package scripts, and CI.
 Keep the selected Blender add-on + backend scope aligned with AGENTS.md and keep windows-exe dormant unless the current request activates it.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

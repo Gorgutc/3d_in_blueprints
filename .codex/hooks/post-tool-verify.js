@@ -1,71 +1,56 @@
+import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  executeVerificationPlan,
+  HookPayloadError,
+  planPostToolVerification,
+} from '../../scripts/lib/post-tool-routing.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  input += chunk;
-});
-
-process.stdin.on('end', () => {
-  let payload = {};
+export function main({ input = readFileSync(0, 'utf8'), platform = process.platform } = {}) {
+  let plan;
   try {
-    payload = JSON.parse(input || '{}');
-  } catch {
-    payload = {};
+    plan = planPostToolVerification(input, { root });
+  } catch (error) {
+    const prefix = error instanceof HookPayloadError ? error.code : 'hook_internal_error';
+    console.error(`[FAIL] PostToolUse payload (${prefix}): ${error.message}`);
+    return 2;
   }
 
-  const source = normalizePayload(JSON.stringify(payload));
-  const infraChanged = [
-    /AGENTS\.md/,
-    /CLAUDE\.md/,
-    /GEMINI\.md/,
-    /DO_NOT_PUSH\.md/,
-    /\.codex\//,
-    /\.agents\//,
-    /plugins\/blueprints-codex\//,
-    /docs\/agent\//,
-    /docs\/release\//,
-    /backend\//,
-    /blender_addon\//,
-    /scripts\/.*\.(?:js|mjs|cjs|py)/,
-    /package(?:-lock)?\.json/,
-    /lefthook\.yml/,
-    /\.github\/workflows\/codex-infra\.yml/
-  ].some((pattern) => pattern.test(source));
-
-  if (!infraChanged) return;
-
-  if (process.env.CODEX_INFRA_POST_TOOL_DRY_RUN === '1') {
-    process.stdout.write('Codex quality:deep verification would run.\n');
-    return;
+  if (plan.commands.length === 0) return 0;
+  const outcome = executeVerificationPlan(plan.commands, (command) => runNpmCommand(command, platform));
+  if (!outcome.ok) {
+    const detail = outcome.result.detail ? `: ${outcome.result.detail}` : '';
+    console.error(`[FAIL] ${outcome.failedCommand}${detail}`);
+    return 2;
   }
-
-  const result = runQualityDeep();
-  if (result.status !== 0) {
-    process.stderr.write('Codex quality:deep verification failed after a relevant edit.\n');
-    process.exit(2);
-  }
-});
-
-function normalizePayload(source) {
-  return source.replace(/\\+/g, '/');
+  return 0;
 }
 
-function runQualityDeep() {
-  if (process.platform === 'win32') {
-    return spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm.cmd run quality:deep'], {
+function runNpmCommand(command, platform) {
+  const args = command === 'quality:deep'
+    ? ['run', 'quality:deep']
+    : ['run', 'test:blender', '--', '--if-available'];
+  let result;
+  if (platform === 'win32') {
+    const commandLine = `npm.cmd ${args.join(' ')}`;
+    result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', commandLine], {
       cwd: root,
       stdio: 'inherit',
-      windowsHide: true
+      windowsHide: true,
     });
+  } else {
+    result = spawnSync('npm', args, { cwd: root, stdio: 'inherit' });
   }
+  if (result.error) return { detail: result.error.message, ok: false };
+  if (result.signal) return { detail: `terminated by ${result.signal}`, ok: false };
+  if (result.status !== 0) return { detail: `exited with status ${result.status ?? '<none>'}`, ok: false };
+  return { ok: true };
+}
 
-  return spawnSync('npm', ['run', 'quality:deep'], {
-    cwd: root,
-    stdio: 'inherit'
-  });
+if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
+  process.exitCode = main();
 }

@@ -12,7 +12,8 @@ Validate changes against the approved repository contract.
 ## Checks
 
 - Authority order remains intact.
-- Profiles remain dormant unless explicitly activated.
+- `blender-addon` remains active and `windows-exe` remains dormant unless the
+  current request explicitly changes those states.
 - Public commands still exist.
 - `/review` or fallback review remains required.
 - No source-repo-specific active rule is introduced.

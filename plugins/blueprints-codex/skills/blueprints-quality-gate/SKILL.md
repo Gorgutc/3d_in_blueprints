@@ -11,6 +11,6 @@ Review the final diff before delivery.
 
 ## Output
 
-Return PASS/FAIL with evidence, blockers, and explicit defers. Run or review
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers. Run or review
 `npm run codex:ship`. Block delivery on failing verification, unsafe hooks, or
 unapproved stack activation.

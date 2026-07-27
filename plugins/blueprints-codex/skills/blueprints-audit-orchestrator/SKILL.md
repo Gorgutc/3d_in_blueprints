@@ -13,5 +13,5 @@ Use explicit spawned subagents for independent review streams.
 
 1. Record the routing decision from `docs/agent/orchestration.md`.
 2. Spawn applicable read-only roles from `.codex/agents/`.
-3. Require PASS/FAIL, evidence, blockers, and explicit defers.
+3. Require PASS/FAIL, evidence, findings, blockers, and explicit defers.
 4. Do not deliver while a required role has unresolved blockers.

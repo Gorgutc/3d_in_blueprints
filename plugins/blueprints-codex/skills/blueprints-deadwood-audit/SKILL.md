@@ -11,5 +11,6 @@ Audit only unless assigned a write zone.
 
 ## Output
 
-Return keep, fix, remove, archive, and needs-user-decision sections. Do not mark
+Return PASS/FAIL with evidence, findings, keep, fix, remove, archive,
+needs-user-decision, blockers, and explicit defers. Do not mark
 dormant profiles as deadwood merely because they are inactive.

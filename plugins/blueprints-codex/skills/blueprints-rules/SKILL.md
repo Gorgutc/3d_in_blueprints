@@ -11,7 +11,10 @@ Keep work inside the selected Blender add-on + backend scope.
 
 ## Rules
 
-- Do not add product source code, compilers, installers, Blender runtime commands, runtime dependencies, generated artifacts, or browser gates unless the active iteration requests and verifies them.
+- Change implemented product paths and Blender smoke routes only inside the
+  current approved capability scope with matching tests. Do not add compilers,
+  installers, runtime dependencies, committed generated artifacts, or browser
+  gates without explicit activation.
 - Keep Node usage limited to Codex infrastructure.
 - Treat source repository material as reference, not active policy.
 - Run the infrastructure gates before delivery.

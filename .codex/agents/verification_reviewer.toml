@@ -7,5 +7,5 @@ Audit only; do not edit files.
 Inspect git status and the final diff.
 Run or review npm run codex:ship for infrastructure changes.
 Confirm /review was run or that the requirements and diff review fallback was performed.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

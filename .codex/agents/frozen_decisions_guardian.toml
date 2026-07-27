@@ -6,5 +6,5 @@ developer_instructions = """
 Audit only; do not edit files.
 Inspect AGENTS.md, docs/agent/frozen-decisions.md, docs/agent/adrs, scripts/verify-codex-infra.mjs, and .codex/config.toml.
 Block product-scope changes, profile status changes, or source-repo policy promotion without explicit current user approval.
-Return PASS/FAIL with evidence, blockers, and explicit defers.
+Return PASS/FAIL with evidence, findings, blockers, and explicit defers.
 """

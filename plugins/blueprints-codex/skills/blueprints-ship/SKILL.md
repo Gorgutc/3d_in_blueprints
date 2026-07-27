@@ -13,5 +13,6 @@ Final delivery requires evidence.
 
 1. Inspect `git status --short`.
 2. Run `npm run codex:ship`.
-3. Run `/review` when available, otherwise perform the documented fallback.
-4. Report verification evidence and explicit defers.
+3. Run strict `npm run test:blender` when Blender-sensitive paths changed.
+4. Run `/review` when available, otherwise perform the documented fallback.
+5. Report PASS/FAIL, evidence, findings, blockers, and explicit defers.
