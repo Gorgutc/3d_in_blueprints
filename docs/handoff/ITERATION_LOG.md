@@ -1561,3 +1561,61 @@ next_iteration_ready: false
 resume_prompt: Review the I8 diff and visual evidence. If accepted, explicitly
   authorize commit, push, and draft PR publication; schedule P0b separately.
 ```
+
+```yaml
+iteration_id: I8-pr-publication
+status: PASS
+date: 2026-07-27
+scope_completed:
+  - Committed I8 implementation as `5ac7e5a Add I8 runtime contract hardening`.
+  - Pushed `codex/i8-runtime-contract-hardening` to origin.
+  - Opened draft PR #10 for I8 against `main`.
+  - Preserved the separate P0b and all product/runtime/distribution defers.
+files_changed:
+  - docs/handoff/ITERATION_LOG.md
+commands_run:
+  - command: git commit -m "Add I8 runtime contract hardening"
+    result: PASS
+    evidence: Created commit `5ac7e5aa54c6a3c952facc5af27e3466a2e79bf3`
+      from the exact 31-file I8 allowlist.
+  - command: git push -u origin codex/i8-runtime-contract-hardening
+    result: PASS
+    evidence: Published the branch and configured its upstream without force.
+  - command: GitHub connector create draft PR
+    result: PASS
+    evidence: Created draft PR
+      https://github.com/Gorgutc/3d_in_blueprints/pull/10 targeting `main`.
+  - command: npm.cmd run codex:ship
+    result: PASS
+    evidence: Plugin 214/214, governance 774/774, JS 11/11, infra 350/350,
+      backend 51 OK with 4 skips, add-on 35 OK with 2 skips, and packaging
+      smoke with two artifacts.
+  - command: npm.cmd run test:blender
+    result: PASS
+    evidence: Blender 5.1.2 source and isolated installed two-ZIP smokes passed.
+artifacts_generated: []
+acceptance_gates:
+  passed:
+    - I8 implementation is committed and pushed for review.
+    - Draft PR #10 targets `main` from the intended I8 branch.
+    - Publication record preserves actual commit, branch, PR, and verification.
+  failed: []
+accepted_deviations:
+  - PR is draft, matching the repository publish workflow.
+  - Six symlink tests remain skipped on this unprivileged Windows account and
+    require Linux CI or privileged Windows coverage.
+explicit_defers:
+  - Check remote CI and review draft PR #10 before merge.
+  - Complete the separate P0b instruction/tooling hardening iteration.
+  - FreeCAD/TechDraw projection, HLR, atomic publication, deeper semantics,
+    GLB packaged coverage, Windows executable packaging, signing, and public
+    release remain deferred.
+blockers: []
+risks_or_regressions:
+  - The current repository gates still do not prove complete JS discovery when
+    a traversal/stat/read operation fails; P0b owns that fail-open checker debt.
+repo_state: branch codex/i8-runtime-contract-hardening published as draft PR #10
+next_iteration_ready: false
+resume_prompt: Review draft PR #10 and remote CI. Merge only after approval;
+  schedule P0b separately before starting the provider/projection iteration.
+```
