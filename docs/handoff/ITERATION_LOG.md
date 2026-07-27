@@ -1677,7 +1677,7 @@ risks_or_regressions:
   - Hostile TOCTOU between output validation and later consumption remains an
     explicit post-I8 hardening item.
 repo_state: draft PR #10 updated through `98eeb37`; Ubuntu and Windows CI pass
-next_iteration_ready: true
-resume_prompt: Review draft PR #10. If accepted, merge separately; otherwise
-  begin the P0b instruction/tooling hardening iteration on a fresh branch.
+next_iteration_ready: false
+resume_prompt: Review final-head CI and draft PR #10. Merge only after explicit
+  owner approval; schedule P0b separately after I8 closeout.
 ```
