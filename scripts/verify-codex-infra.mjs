@@ -1,6 +1,25 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  rmdirSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   checkJavaScriptFiles,
   collectJavaScriptFiles,
@@ -14,11 +33,26 @@ import {
   parseSmokeArguments,
   resolveBlender,
 } from './run-blender-smoke.mjs';
+import {
+  NATIVE_HOOKS,
+  hookBody as nativeHookBody,
+  installNativeHooks as installNativeHooksCore,
+  legacyHookBody as legacyNativeHookBody,
+  main as installNativeHooksCoreMain,
+  resolveActiveHooksDirectory as resolveActiveHooksDirectoryCore,
+} from './lib/native-hook-installer.mjs';
+import {
+  PYTHON_TEST_MODULES,
+  PYTHON_TEST_ROOTS,
+  inspectPythonTestInventory,
+  main as runPythonTestsMain,
+} from './run-python-tests.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, '..');
 const checks = [];
 const frozenLiveAssertionIds = new Set();
+const nativeHookFixtureContexts = new Map();
 
 const requiredFiles = [
   'AGENTS.md',
@@ -58,6 +92,7 @@ const requiredFiles = [
   'scripts/check-governance.mjs',
   'scripts/check-js-syntax.mjs',
   'scripts/lib/js-syntax-checker.mjs',
+  'scripts/lib/native-hook-installer.mjs',
   'scripts/lib/post-tool-routing.mjs',
   'scripts/verify-codex-infra.mjs',
   'scripts/run-python-tests.mjs',
@@ -151,6 +186,48 @@ const expectedHooks = Object.freeze({
   },
 });
 
+const expectedContextHooks = Object.freeze({
+  SessionStart: Object.freeze({
+    path: '.codex/hooks/session-start.js',
+    context: [
+      '3d_in_blueprints Codex infrastructure workspace.',
+      'Source of truth: AGENTS.md.',
+      'Selected scope: Blender add-on plus local standalone backend.',
+      'Active profile: blender-addon. Dormant profile: windows-exe.',
+      'Use explicit spawned subagents for broad work when available.',
+      'Before delivery, run npm run codex:ship and /review or the documented fallback.',
+    ].join(' '),
+  }),
+  UserPromptSubmit: Object.freeze({
+    path: '.codex/hooks/user-prompt-nudge.js',
+    context: '[3d_in_blueprints reminder] Read AGENTS.md, keep the selected Blender add-on + backend scope, use explicit spawned subagents for broad work, and run npm run codex:ship plus /review or the documented fallback before delivery.',
+  }),
+});
+
+const expectedUserPromptTriggers = Object.freeze([
+  'implement',
+  'refactor',
+  'audit',
+  'cleanup',
+  'agents',
+  'skills',
+  'hooks',
+  'ship',
+  'review',
+  'exe',
+  'windows',
+  'blender',
+  '\u0441\u0434\u0435\u043b\u0430\u0439',
+  '\u0434\u043e\u0431\u0430\u0432\u044c',
+  '\u0430\u0433\u0435\u043d\u0442',
+  '\u0441\u043a\u0438\u043b\u043b',
+  '\u0445\u0443\u043a',
+  '\u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446',
+  '\u043f\u0440\u043e\u0432\u0435\u0440\u044c',
+  '\u044d\u043a\u0437\u0435',
+  '\u0431\u043b\u0435\u043d\u0434\u0435\u0440',
+]);
+
 const expectedFrozenDecisions = Object.freeze([
   ['FD-001', 'Product scope is selected: Blender add-on + local standalone backend.'],
   ['FD-002', 'Node tooling is a verification command harness, not the product runtime.'],
@@ -180,6 +257,11 @@ pre-push:
     codex-ship:
       run: npm run codex:ship
 `;
+
+const expectedNativeHooks = Object.freeze([
+  Object.freeze({ name: 'pre-commit', command: 'npm run quality:fast' }),
+  Object.freeze({ name: 'pre-push', command: 'npm run codex:ship' }),
+]);
 
 const expectedWorkflow = [
   'name: Codex Infrastructure',
@@ -404,17 +486,372 @@ function hookConfigErrors(config) {
     : ['.codex/hooks.json differs from the approved exact topology'];
 }
 
-function nativeHookErrors(source) {
-  const block = /const hooks = new Map\(\[([\s\S]*?)\]\);/.exec(source)?.[1] || '';
-  const entries = [...block.matchAll(/\['([^']+)',\s*'([^']+)'\]/g)]
-    .map((match) => [match[1], match[2]]);
-  const expected = [
-    ['pre-commit', 'npm run quality:fast'],
-    ['pre-push', 'npm run codex:ship'],
-  ];
-  return JSON.stringify(entries) === JSON.stringify(expected)
+function nativeHookContractErrors(hooks) {
+  const entries = Array.isArray(hooks)
+    ? hooks.map((entry) => ({ name: entry?.name, command: entry?.command }))
+    : [];
+  return JSON.stringify(entries) === JSON.stringify(expectedNativeHooks)
     ? []
-    : [`native Git hook map differs: ${JSON.stringify(entries)}`];
+    : [`native Git hook contract differs: ${JSON.stringify(entries)}`];
+}
+
+function expectedNativeHookBody(command, { legacy = false } = {}) {
+  return [
+    '#!/bin/sh',
+    ...(!legacy ? ['# managed-by: 3d_in_blueprints-codex-infra'] : []),
+    'set -eu',
+    'repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"',
+    'cd "$repo_root"',
+    command,
+    '',
+  ].join('\n');
+}
+
+function nativeInstallerFs(overrides = {}) {
+  return {
+    chmodSync,
+    lstatSync,
+    mkdirSync,
+    readFileSync,
+    realpathSync,
+    renameSync,
+    rmdirSync,
+    unlinkSync,
+    writeFileSync,
+    ...overrides,
+  };
+}
+
+function createIsolatedFixtureGitContext(container, baseEnv = process.env) {
+  const globalConfig = path.join(container, 'isolated-global.gitconfig');
+  const templateDir = path.join(container, 'isolated-template');
+  writeFileSync(globalConfig, '', { encoding: 'utf8', flag: 'wx' });
+  mkdirSync(templateDir);
+
+  const env = { ...baseEnv };
+  for (const key of Object.keys(env)) {
+    const upper = key.toUpperCase();
+    if (
+      [
+        'GCM_INTERACTIVE',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+        'GIT_CEILING_DIRECTORIES',
+        'GIT_COMMON_DIR',
+        'GIT_CONFIG',
+        'GIT_CONFIG_COUNT',
+        'GIT_CONFIG_GLOBAL',
+        'GIT_CONFIG_NOSYSTEM',
+        'GIT_CONFIG_PARAMETERS',
+        'GIT_CONFIG_SYSTEM',
+        'GIT_DIR',
+        'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+        'GIT_GRAFT_FILE',
+        'GIT_INDEX_FILE',
+        'GIT_NAMESPACE',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_QUARANTINE_PATH',
+        'GIT_REPLACE_REF_BASE',
+        'GIT_SHALLOW_FILE',
+        'GIT_TEMPLATE_DIR',
+        'GIT_TERMINAL_PROMPT',
+        'GIT_WORK_TREE',
+      ].includes(upper)
+      || /^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(upper)
+    ) {
+      delete env[key];
+    }
+  }
+  env.GCM_INTERACTIVE = 'Never';
+  env.GIT_CONFIG_COUNT = '0';
+  env.GIT_CONFIG_GLOBAL = globalConfig;
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_TEMPLATE_DIR = templateDir;
+  env.GIT_TERMINAL_PROMPT = '0';
+  return Object.freeze({
+    container: path.resolve(container),
+    env: Object.freeze(env),
+  });
+}
+
+function fixtureContextForPath(candidate) {
+  if (typeof candidate !== 'string' || candidate.length === 0) return null;
+  const resolved = path.resolve(candidate);
+  let selected = null;
+  for (const context of nativeHookFixtureContexts.values()) {
+    const relative = path.relative(context.container, resolved);
+    const confined = relative === ''
+      || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+    if (confined && (!selected || context.container.length > selected.container.length)) {
+      selected = context;
+    }
+  }
+  return selected;
+}
+
+function normalizedGitFixturePath(rawValue) {
+  let value = Buffer.isBuffer(rawValue) ? rawValue.toString('utf8') : String(rawValue || '');
+  if (value.endsWith('\r\n')) value = value.slice(0, -2);
+  else if (value.endsWith('\n')) value = value.slice(0, -1);
+  if (value.length === 0 || /[\r\n\0]/.test(value)) {
+    throw new Error('fixture Git hooks lookup returned an invalid path');
+  }
+  if (process.platform === 'win32') value = value.replace(/^\/([A-Za-z]:[\\/])/, '$1');
+  return path.resolve(value);
+}
+
+function assertFixtureHooksPathConfined(context, rawPath) {
+  const candidate = normalizedGitFixturePath(rawPath);
+  const relative = path.relative(context.container, candidate);
+  if (
+    relative === '..'
+    || relative.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relative)
+  ) {
+    throw new Error(`fixture Git hooks path escaped its container: ${candidate}`);
+  }
+  return candidate;
+}
+
+function nativeHookFixtureSpawn(rootPath) {
+  const context = fixtureContextForPath(rootPath);
+  if (!context) return spawnSync;
+  return (command, args, options = {}) => {
+    const result = spawnSync(command, args, { ...options, env: context.env });
+    if (
+      command === 'git'
+      && JSON.stringify(args) === JSON.stringify([
+        'rev-parse', '--path-format=absolute', '--git-path', 'hooks',
+      ])
+      && !result.error
+      && result.signal === null
+      && result.status === 0
+    ) {
+      assertFixtureHooksPathConfined(context, result.stdout);
+    }
+    return result;
+  };
+}
+
+function resolveActiveHooksDirectory(options = {}) {
+  return resolveActiveHooksDirectoryCore({
+    ...options,
+    spawn: options.spawn ?? nativeHookFixtureSpawn(options.root),
+  });
+}
+
+function installNativeHooks(options = {}) {
+  return installNativeHooksCore({
+    ...options,
+    spawn: options.spawn ?? nativeHookFixtureSpawn(options.root),
+  });
+}
+
+function installNativeHooksMain(options = {}) {
+  return installNativeHooksCoreMain({
+    ...options,
+    spawn: options.spawn ?? nativeHookFixtureSpawn(options.root),
+  });
+}
+
+function createNativeHookFixture(label, { baseEnvFactory = null } = {}) {
+  const container = mkdtempSync(path.join(tmpdir(), 'blueprints-native-hooks-'));
+  try {
+    const baseEnv = baseEnvFactory ? baseEnvFactory(container) : process.env;
+    const context = createIsolatedFixtureGitContext(container, baseEnv);
+    nativeHookFixtureContexts.set(context.container, context);
+    const repo = path.join(container, `repo ${label} \u0442\u0435\u0441\u0442`);
+    mkdirSync(repo);
+    runFixtureGit(repo, ['init', '--quiet']);
+    const defaultHooksDir = runFixtureGit(
+      repo,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'],
+    );
+    mkdirSync(defaultHooksDir);
+    return { container, gitEnv: context.env, repo };
+  } catch (error) {
+    try {
+      cleanupNativeHookFixture(container);
+    } catch {
+      // Preserve the original setup failure; the bounded temp prefix is still known.
+    }
+    throw error;
+  }
+}
+
+function runFixtureGit(cwd, args) {
+  const context = fixtureContextForPath(cwd);
+  if (!context) throw new Error(`fixture Git cwd is not registered: ${cwd}`);
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: context.env,
+    killSignal: 'SIGTERM',
+    timeout: 15_000,
+    windowsHide: true,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`fixture git ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
+  }
+  if (JSON.stringify(args) === JSON.stringify([
+    'rev-parse', '--path-format=absolute', '--git-path', 'hooks',
+  ])) {
+    assertFixtureHooksPathConfined(context, result.stdout);
+  }
+  return String(result.stdout || '').replace(/\r?\n$/, '');
+}
+
+function cleanupNativeHookFixture(container) {
+  const resolvedTemp = path.resolve(tmpdir());
+  const resolvedContainer = path.resolve(container);
+  const relative = path.relative(resolvedTemp, resolvedContainer);
+  if (
+    relative === ''
+    || relative === '..'
+    || relative.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relative)
+    || !path.basename(resolvedContainer).startsWith('blueprints-native-hooks-')
+  ) {
+    throw new Error(`refusing to remove unsafe native-hook fixture: ${resolvedContainer}`);
+  }
+  try {
+    rmSync(resolvedContainer, { force: true, recursive: true });
+  } finally {
+    nativeHookFixtureContexts.delete(resolvedContainer);
+  }
+}
+
+function withNativeHookFixture(label, run, options = {}) {
+  let fixture;
+  try {
+    fixture = createNativeHookFixture(label, options);
+    run(fixture);
+  } catch (error) {
+    check(`native Git hook fixture completes: ${label}`, false, errorDetailForCheck(error));
+  } finally {
+    if (fixture) {
+      try {
+        cleanupNativeHookFixture(fixture.container);
+      } catch (error) {
+        check(`native Git hook fixture cleanup: ${label}`, false, errorDetailForCheck(error));
+      }
+    }
+  }
+}
+
+function errorDetailForCheck(error) {
+  if (!error) return 'unknown error';
+  const code = typeof error.code === 'string' ? `${error.code}: ` : '';
+  return `${code}${error.message || String(error)}`;
+}
+
+function sameFixturePath(left, right) {
+  const normalize = (value) => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return normalize(left) === normalize(right);
+}
+
+function hookTargetSnapshot(target) {
+  try {
+    const stat = lstatSync(target);
+    if (stat.isSymbolicLink()) {
+      return { exists: true, kind: 'symlink', mode: stat.mode & 0o777 };
+    }
+    if (!stat.isFile()) {
+      return { exists: true, kind: 'other', mode: stat.mode & 0o777 };
+    }
+    return {
+      body: readFileSync(target).toString('base64'),
+      exists: true,
+      kind: 'file',
+      mode: stat.mode & 0o777,
+      nlink: stat.nlink,
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { exists: false };
+    throw error;
+  }
+}
+
+function nativeHookDirectoryManifest(hooksDir) {
+  try {
+    return readdirSync(hooksDir).sort();
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+function nativeHookTempArtifacts(hooksDir) {
+  return nativeHookDirectoryManifest(hooksDir).filter((name) => name.includes('.codex-'));
+}
+
+function installedHookErrors(hooksDir) {
+  const errors = [];
+  for (const { name, command } of expectedNativeHooks) {
+    const target = path.join(hooksDir, name);
+    if (!existsSync(target)) {
+      errors.push(`${name} missing`);
+      continue;
+    }
+    const body = readFileSync(target, 'utf8');
+    if (body !== expectedNativeHookBody(command)) errors.push(`${name} body differs`);
+    const stat = lstatSync(target);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) {
+      errors.push(`${name} is not a single-link regular file`);
+    }
+    if (process.platform !== 'win32' && (stat.mode & 0o111) === 0) {
+      errors.push(`${name} is not executable`);
+    }
+  }
+  if (nativeHookTempArtifacts(hooksDir).length > 0) errors.push('temporary artifacts remain');
+  return errors;
+}
+
+function seedLegacyNativeHooks(hooksDir) {
+  for (const { name, command } of expectedNativeHooks) {
+    const lineEnding = name === 'pre-commit' ? '\r\n' : '\n';
+    const target = path.join(hooksDir, name);
+    writeFileSync(
+      target,
+      expectedNativeHookBody(command, { legacy: true }).replace(/\n/g, lineEnding),
+      'utf8',
+    );
+    chmodSync(target, name === 'pre-commit' ? 0o744 : 0o700);
+  }
+}
+
+function expectInstallerFailure(run, pattern = null) {
+  try {
+    run();
+    return { message: '', threw: false };
+  } catch (error) {
+    const message = errorDetailForCheck(error);
+    return {
+      message,
+      threw: pattern ? pattern.test(message) : true,
+    };
+  }
+}
+
+function resolverSpawn(root, hooksDir, secondResult = null) {
+  const calls = [];
+  const spawn = (command, args, options) => {
+    calls.push({ args, command, options });
+    if (calls.length === 1) {
+      return { error: null, signal: null, status: 0, stderr: '', stdout: `${root}\n` };
+    }
+    return secondResult || {
+      error: null,
+      signal: null,
+      status: 0,
+      stderr: '',
+      stdout: `${hooksDir}\n`,
+    };
+  };
+  return { calls, spawn };
 }
 
 function parseFrozenDecisions(source) {
@@ -474,6 +911,160 @@ function normalizeWhitespace(value) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function contextHookEnvelope(eventName, additionalContext, extra = {}) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: eventName,
+      additionalContext,
+      ...(extra.hookSpecificOutput || {}),
+    },
+    ...(extra.topLevel || {}),
+  };
+}
+
+function contextHookResult({
+  eventName,
+  additionalContext,
+  stdout,
+  stderr = '',
+  status = 0,
+  signal = null,
+  error = null,
+  extra,
+} = {}) {
+  return {
+    error,
+    signal,
+    status,
+    stderr,
+    stdout: stdout ?? JSON.stringify(contextHookEnvelope(eventName, additionalContext, extra)),
+  };
+}
+
+function runContextHook(relativePath, input = '') {
+  try {
+    const result = spawnSync(process.execPath, [path.join(root, relativePath)], {
+      cwd: root,
+      encoding: 'utf8',
+      input,
+      killSignal: 'SIGTERM',
+      timeout: 4_000,
+      windowsHide: true,
+    });
+    return {
+      error: result?.error || null,
+      signal: result?.signal || null,
+      status: result?.status,
+      stderr: result?.stderr == null ? '' : String(result.stderr),
+      stdout: result?.stdout == null ? '' : String(result.stdout),
+    };
+  } catch (error) {
+    return {
+      error,
+      signal: null,
+      status: null,
+      stderr: '',
+      stdout: '',
+    };
+  }
+}
+
+function contextHookExecutionErrors(result, {
+  eventName,
+  additionalContext,
+  output = 'required',
+}) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return ['hook execution result must be an object'];
+  }
+
+  const errors = [];
+  const stderr = result.stderr == null ? '' : String(result.stderr);
+  const stdout = result.stdout == null ? '' : String(result.stdout);
+  if (result.error) {
+    const code = result.error.code ? `${result.error.code}: ` : '';
+    errors.push(`hook process error: ${code}${result.error.message || String(result.error)}`);
+  }
+  if (result.signal) errors.push(`hook process terminated by ${result.signal}`);
+  if (result.status === null || result.status === undefined) {
+    errors.push('hook process returned no exit status');
+  } else if (result.status !== 0) {
+    errors.push(`hook process exited with status ${result.status}`);
+  }
+  if (stderr !== '') errors.push('hook process wrote to stderr');
+
+  if (output === 'forbidden') {
+    if (stdout !== '') errors.push('hook process produced unexpected stdout');
+    return errors;
+  }
+  if (stdout === '') {
+    errors.push('hook process produced no stdout');
+    return errors;
+  }
+  if (stdout !== stdout.trim()) errors.push('hook stdout has leading or trailing whitespace');
+
+  let envelope;
+  try {
+    envelope = JSON.parse(stdout);
+  } catch {
+    errors.push('hook stdout is not exactly one JSON value');
+    return errors;
+  }
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
+    errors.push('hook envelope must be an object');
+    return errors;
+  }
+  const topLevelKeys = Object.keys(envelope).sort();
+  if (JSON.stringify(topLevelKeys) !== JSON.stringify(['hookSpecificOutput'])) {
+    errors.push(`hook envelope keys differ: ${topLevelKeys.join(', ')}`);
+  }
+
+  const hookOutput = envelope.hookSpecificOutput;
+  if (!hookOutput || typeof hookOutput !== 'object' || Array.isArray(hookOutput)) {
+    errors.push('hookSpecificOutput must be an object');
+    return errors;
+  }
+  const outputKeys = Object.keys(hookOutput).sort();
+  if (JSON.stringify(outputKeys) !== JSON.stringify(['additionalContext', 'hookEventName'])) {
+    errors.push(`hookSpecificOutput keys differ: ${outputKeys.join(', ')}`);
+  }
+  if (hookOutput.hookEventName !== eventName) errors.push('hook event differs');
+  if (typeof hookOutput.additionalContext !== 'string') {
+    errors.push('hook additionalContext must be a string');
+  } else if (hookOutput.additionalContext !== additionalContext) {
+    errors.push('hook additionalContext differs from the approved event contract');
+  }
+  return errors;
+}
+
+function userPromptTriggerInventoryErrors(source) {
+  const block = /const triggers = \[([\s\S]*?)\n\s*\];/.exec(source)?.[1];
+  if (block === undefined) return ['UserPromptSubmit trigger inventory is missing'];
+
+  const errors = [];
+  const triggers = [];
+  const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (const [index, line] of lines.entries()) {
+    const match = /^'((?:\\.|[^'\\])*)'(,?)$/.exec(line);
+    if (!match) {
+      errors.push(`invalid trigger entry: ${line}`);
+      continue;
+    }
+    if (index < lines.length - 1 && match[2] !== ',') {
+      errors.push(`missing trigger separator: ${line}`);
+    }
+    try {
+      triggers.push(JSON.parse(`"${match[1].replaceAll('"', '\\"')}"`));
+    } catch {
+      errors.push(`invalid trigger string: ${line}`);
+    }
+  }
+  if (JSON.stringify(triggers) !== JSON.stringify(expectedUserPromptTriggers)) {
+    errors.push(`UserPromptSubmit triggers differ: ${triggers.join(', ')}`);
+  }
+  return errors;
 }
 
 function fakeFilesystem(fakeRoot, tree, failures = {}) {
@@ -700,7 +1291,6 @@ if (exists('docs/agent/frozen-decisions.md')) {
   const readme = exists('README.md') ? read('README.md') : '';
   const packageConfig = exists('package.json') ? JSON.parse(read('package.json')) : {};
   const workflow = exists('.github/workflows/codex-infra.yml') ? read('.github/workflows/codex-infra.yml') : '';
-  const installer = exists('scripts/install-hooks.mjs') ? read('scripts/install-hooks.mjs') : '';
   const lefthook = exists('lefthook.yml') ? read('lefthook.yml') : '';
   const bridge = exists('blender_addon/blueprints_addon/bridge.py') ? read('blender_addon/blueprints_addon/bridge.py') : '';
   const addonEntrypoint = exists('blender_addon/blueprints_addon/__init__.py') ? read('blender_addon/blueprints_addon/__init__.py') : '';
@@ -710,8 +1300,10 @@ if (exists('docs/agent/frozen-decisions.md')) {
 
   checkFrozenLive(
     'FD-001',
-    'selected add-on and backend scope exists',
+    'selected add-on and local standalone backend scope is exact',
     /app_stack\s*=\s*"blender-addon-backend"/.test(config)
+      && /product_scope\s*=\s*"Blender add-on \+ local standalone backend"/.test(config)
+      && /Product scope is selected: Blender add-on \+ local standalone backend\./.test(agents)
       && exists('blender_addon/blueprints_addon/__init__.py')
       && exists('backend/src/blueprints_backend/__init__.py'),
   );
@@ -857,7 +1449,7 @@ if (exists('docs/agent/frozen-decisions.md')) {
     packageConfig.scripts?.['codex:ship'] === 'npm run quality:deep'
       && /ship_command\s*=\s*"npm run codex:ship"/.test(config)
       && workflowErrors(workflow).length === 0
-      && nativeHookErrors(installer).length === 0
+      && nativeHookContractErrors(NATIVE_HOOKS).length === 0
       && lefthook.replace(/\r\n/g, '\n') === expectedLefthook,
   );
   const verificationAgent = exists('.codex/agents/verification_reviewer.toml')
@@ -950,6 +1542,196 @@ if (exists('.codex/hooks.json')) {
   }
 }
 
+if (
+  exists(expectedContextHooks.SessionStart.path)
+  && exists(expectedContextHooks.UserPromptSubmit.path)
+) {
+  const executionContract = (eventName, output = 'required') => ({
+    eventName,
+    additionalContext: expectedContextHooks[eventName].context,
+    output,
+  });
+  const errorsFor = (eventName, result, output = 'required') => (
+    contextHookExecutionErrors(result, executionContract(eventName, output))
+  );
+  const checkExecution = (name, eventName, result, output = 'required') => {
+    const errors = errorsFor(eventName, result, output);
+    check(name, errors.length === 0, errors.join('; '));
+  };
+
+  const sessionEmpty = runContextHook(expectedContextHooks.SessionStart.path);
+  const sessionNoise = runContextHook(
+    expectedContextHooks.SessionStart.path,
+    JSON.stringify({ ignored: 'input' }),
+  );
+  checkExecution('SessionStart executable emits the approved exact contract', 'SessionStart', sessionEmpty);
+  checkExecution('SessionStart ignores arbitrary stdin deterministically', 'SessionStart', sessionNoise);
+  check(
+    'SessionStart output is byte-deterministic across input',
+    sessionEmpty.stdout === sessionNoise.stdout,
+  );
+
+  const userPromptSource = read(expectedContextHooks.UserPromptSubmit.path);
+  const triggerInventoryErrors = userPromptTriggerInventoryErrors(userPromptSource);
+  check(
+    'UserPromptSubmit trigger inventory is exact',
+    triggerInventoryErrors.length === 0,
+    triggerInventoryErrors.join('; '),
+  );
+  check(
+    'UserPromptSubmit trigger inventory rejects an additive entry',
+    userPromptTriggerInventoryErrors(
+      userPromptSource.replace("    'blender',", "    'blender',\n    'deploy',"),
+    ).length > 0,
+  );
+  check(
+    'UserPromptSubmit trigger inventory rejects a deleted entry',
+    userPromptTriggerInventoryErrors(
+      userPromptSource.replace("    'blender',", ''),
+    ).length > 0,
+  );
+
+  for (const trigger of expectedUserPromptTriggers) {
+    checkExecution(
+      `UserPromptSubmit executable preserves trigger: ${trigger}`,
+      'UserPromptSubmit',
+      runContextHook(
+        expectedContextHooks.UserPromptSubmit.path,
+        JSON.stringify({ prompt: `please ${trigger} now` }),
+      ),
+    );
+  }
+  for (const prompt of ['AUDIT HOOKS', '\u041f\u0420\u041e\u0412\u0415\u0420\u042c \u0425\u0423\u041a', 'shipping labels', 'reviewer notes', 'execute a calculation']) {
+    checkExecution(
+      `UserPromptSubmit preserves case-insensitive substring behavior: ${prompt}`,
+      'UserPromptSubmit',
+      runContextHook(
+        expectedContextHooks.UserPromptSubmit.path,
+        JSON.stringify({ prompt }),
+      ),
+    );
+  }
+
+  for (const [name, input] of [
+    ['legacy user_prompt alias', JSON.stringify({ user_prompt: 'audit hooks' })],
+    ['empty primary fallback', JSON.stringify({ prompt: '', user_prompt: 'audit hooks' })],
+    ['false primary fallback', JSON.stringify({ prompt: false, user_prompt: 'audit hooks' })],
+    ['zero primary fallback', JSON.stringify({ prompt: 0, user_prompt: 'audit hooks' })],
+    ['null primary fallback', JSON.stringify({ prompt: null, user_prompt: 'audit hooks' })],
+    ['raw malformed trigger fallback', 'audit hooks {'],
+  ]) {
+    checkExecution(
+      `UserPromptSubmit emits the approved reminder for ${name}`,
+      'UserPromptSubmit',
+      runContextHook(expectedContextHooks.UserPromptSubmit.path, input),
+    );
+  }
+
+  for (const [name, input] of [
+    ['empty input', ''],
+    ['empty object', '{}'],
+    ['non-trigger', JSON.stringify({ prompt: 'hello world' })],
+    ['whitespace prompt', JSON.stringify({ prompt: '   ' })],
+    ['truthy string primary precedence', JSON.stringify({ prompt: 'hello', user_prompt: 'audit hooks' })],
+    ['truthy numeric primary', JSON.stringify({ prompt: 42, user_prompt: 'audit hooks' })],
+    ['truthy boolean primary', JSON.stringify({ prompt: true, user_prompt: 'audit hooks' })],
+    ['truthy object primary', JSON.stringify({ prompt: {}, user_prompt: 'audit hooks' })],
+    ['truthy array primary', JSON.stringify({ prompt: [], user_prompt: 'audit hooks' })],
+    ['truthy numeric alias', JSON.stringify({ user_prompt: 42 })],
+    ['truthy boolean alias', JSON.stringify({ user_prompt: true })],
+    ['truthy object alias', JSON.stringify({ user_prompt: {} })],
+    ['truthy array alias', JSON.stringify({ user_prompt: [] })],
+    ['top-level null', 'null'],
+    ['top-level boolean', 'true'],
+    ['top-level number', '42'],
+    ['top-level string', JSON.stringify('audit hooks')],
+    ['top-level array', '[]'],
+    ['raw malformed non-trigger', 'hello {'],
+    ['raw whitespace', '   '],
+  ]) {
+    checkExecution(
+      `UserPromptSubmit exits silently for ${name}`,
+      'UserPromptSubmit',
+      runContextHook(expectedContextHooks.UserPromptSubmit.path, input),
+      'forbidden',
+    );
+  }
+
+  for (const eventName of ['SessionStart', 'UserPromptSubmit']) {
+    const context = expectedContextHooks[eventName].context;
+    const baseline = contextHookResult({ eventName, additionalContext: context });
+    check(
+      `${eventName} semantic oracle accepts its baseline fixture`,
+      errorsFor(eventName, baseline).length === 0,
+    );
+    const mutants = eventName === 'SessionStart'
+      ? [
+        ['workspace identity removal', (value) => value.replace('3d_in_blueprints Codex infrastructure workspace. ', '')],
+        ['authority removal', (value) => value.replace('Source of truth: AGENTS.md. ', '')],
+        ['scope replacement', (value) => value.replace('Blender add-on plus local standalone backend', 'Windows executable')],
+        ['profile inversion', (value) => value.replace('Active profile: blender-addon. Dormant profile: windows-exe.', 'Active profile: windows-exe. Dormant profile: blender-addon.')],
+        ['orchestration removal', (value) => value.replace('Use explicit spawned subagents for broad work when available. ', '')],
+        ['ship weakening', (value) => value.replace('npm run codex:ship', 'npm run quality:deep')],
+        ['review removal', (value) => value.replace('and /review or the documented fallback', '')],
+        ['contradictory profile addition', (value) => `${value} Active profile: windows-exe.`],
+      ]
+      : [
+        ['authority removal', (value) => value.replace('Read AGENTS.md, ', '')],
+        ['scope replacement', (value) => value.replace('Blender add-on + backend', 'Windows executable')],
+        ['orchestration removal', (value) => value.replace('use explicit spawned subagents for broad work, ', '')],
+        ['ship weakening', (value) => value.replace('npm run codex:ship', 'npm run quality:deep')],
+        ['review removal', (value) => value.replace('plus /review or the documented fallback', '')],
+        ['contradictory profile addition', (value) => `${value} Active profile: windows-exe.`],
+      ];
+    for (const [name, mutate] of mutants) {
+      const mutatedContext = mutate(context);
+      const candidate = contextHookResult({ eventName, additionalContext: mutatedContext });
+      check(`${eventName} semantic mutant changes ${name}`, mutatedContext !== context);
+      check(
+        `${eventName} semantic oracle rejects ${name}`,
+        errorsFor(eventName, candidate).length > 0,
+      );
+    }
+  }
+
+  const sessionContext = expectedContextHooks.SessionStart.context;
+  const sessionFixture = (overrides = {}) => contextHookResult({
+    eventName: 'SessionStart',
+    additionalContext: sessionContext,
+    ...overrides,
+  });
+  for (const [name, result] of [
+    ['missing result', null],
+    ['spawn error', sessionFixture({ error: Object.assign(new Error('spawn failed'), { code: 'ENOENT' }), status: null })],
+    ['timeout', sessionFixture({ error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }), status: null })],
+    ['signal', sessionFixture({ signal: 'SIGTERM', status: null })],
+    ['null status', sessionFixture({ status: null })],
+    ['nonzero status', sessionFixture({ status: 1 })],
+    ['stderr output', sessionFixture({ stderr: 'unexpected' })],
+    ['empty stdout', sessionFixture({ stdout: '' })],
+    ['invalid JSON', sessionFixture({ stdout: '{' })],
+    ['multiple JSON values', sessionFixture({ stdout: '{}{}' })],
+    ['leading whitespace', sessionFixture({ stdout: ` ${sessionFixture().stdout}` })],
+    ['wrong event', contextHookResult({ eventName: 'UserPromptSubmit', additionalContext: sessionContext })],
+    ['non-string context', sessionFixture({ stdout: JSON.stringify(contextHookEnvelope('SessionStart', 42)) })],
+    ['extra top-level key', sessionFixture({ extra: { topLevel: { extra: true } } })],
+    ['extra hook key', sessionFixture({ extra: { hookSpecificOutput: { extra: true } } })],
+    ['missing hookSpecificOutput', sessionFixture({ stdout: '{}' })],
+  ]) {
+    check(
+      `context hook process fixture rejects ${name}`,
+      contextHookExecutionErrors(result, executionContract('SessionStart')).length > 0,
+    );
+  }
+  check(
+    'context hook no-output oracle rejects unexpected stdout',
+    contextHookExecutionErrors(
+      contextHookResult({ stdout: 'unexpected' }),
+      executionContract('UserPromptSubmit', 'forbidden'),
+    ).length > 0,
+  );
+}
+
 if (exists('.codex/config.toml')) {
   const config = read('.codex/config.toml');
   check('project app stack is selected', /app_stack\s*=\s*"blender-addon-backend"/.test(config));
@@ -1021,8 +1803,387 @@ if (exists('package.json')) {
 }
 
 if (exists('scripts/run-python-tests.mjs')) {
-  const pythonRunner = read('scripts/run-python-tests.mjs');
-  check('Python test runner includes Blender bridge unit tests', /blender_addon\/tests/.test(pythonRunner));
+  const expectedPythonTestRoots = Object.freeze([
+    'backend/tests',
+    'blender_addon/tests',
+  ]);
+  const expectedPythonTestModules = Object.freeze([
+    'backend/tests/test_cli.py',
+    'backend/tests/test_job_contracts.py',
+    'backend/tests/test_packaging.py',
+    'backend/tests/test_svg_ids.py',
+    'blender_addon/tests/test_bridge_unit.py',
+    'blender_addon/tests/test_operator_flow.py',
+    'blender_addon/tests/test_preview.py',
+  ]);
+  const fakeRoot = path.resolve(tmpdir(), '__blueprints_python_test_inventory_fixture__');
+  const baselineTree = {
+    '': { entries: ['backend', 'blender_addon'], type: 'directory' },
+    backend: { entries: ['tests'], type: 'directory' },
+    'backend/tests': {
+      entries: ['fixtures', 'test_cli.py', 'test_job_contracts.py', 'test_packaging.py', 'test_svg_ids.py'],
+      type: 'directory',
+    },
+    'backend/tests/fixtures': { entries: ['minimal_job.json'], type: 'directory' },
+    'backend/tests/fixtures/minimal_job.json': { type: 'file' },
+    'backend/tests/test_cli.py': { type: 'file' },
+    'backend/tests/test_job_contracts.py': { type: 'file' },
+    'backend/tests/test_packaging.py': { type: 'file' },
+    'backend/tests/test_svg_ids.py': { type: 'file' },
+    blender_addon: { entries: ['tests'], type: 'directory' },
+    'blender_addon/tests': {
+      entries: [
+        'smoke_blender_bridge.py',
+        'smoke_blender_packaged.py',
+        'test_bridge_unit.py',
+        'test_operator_flow.py',
+        'test_preview.py',
+      ],
+      type: 'directory',
+    },
+    'blender_addon/tests/smoke_blender_bridge.py': { type: 'file' },
+    'blender_addon/tests/smoke_blender_packaged.py': { type: 'file' },
+    'blender_addon/tests/test_bridge_unit.py': { type: 'file' },
+    'blender_addon/tests/test_operator_flow.py': { type: 'file' },
+    'blender_addon/tests/test_preview.py': { type: 'file' },
+  };
+  const inventoryForTree = (tree, options = {}) => inspectPythonTestInventory({
+    fsApi: fakeFilesystem(fakeRoot, tree),
+    root: fakeRoot,
+    ...options,
+  });
+  const fixtureLogger = () => {
+    const errors = [];
+    return { errors, logger: { error: (message) => errors.push(String(message)) } };
+  };
+  const runnerRejectsBeforeSpawn = (tree) => {
+    let spawnCalls = 0;
+    const output = fixtureLogger();
+    const status = runPythonTestsMain({
+      env: { PYTHON: 'fixture-python' },
+      fsApi: fakeFilesystem(fakeRoot, tree),
+      logger: output.logger,
+      root: fakeRoot,
+      spawn: () => {
+        spawnCalls += 1;
+        return { status: 0 };
+      },
+    });
+    return status === 1 && spawnCalls === 0 && output.errors.length > 0;
+  };
+
+  check(
+    'Python test runner owns the exact ordered test-root contract',
+    JSON.stringify(PYTHON_TEST_ROOTS) === JSON.stringify(expectedPythonTestRoots),
+  );
+  check(
+    'Python test runner owns the exact ordered module allowlist',
+    JSON.stringify(PYTHON_TEST_MODULES) === JSON.stringify(expectedPythonTestModules),
+  );
+
+  const liveInventory = inspectPythonTestInventory({ root });
+  check(
+    'Python test inventory matches the live repository exactly and remains nonzero',
+    liveInventory.diagnostics.length === 0
+      && JSON.stringify(liveInventory.files) === JSON.stringify(expectedPythonTestModules),
+    liveInventory.diagnostics.map((item) => `${item.operation}:${item.path}:${item.detail}`).join('; '),
+  );
+
+  const baselineInventory = inventoryForTree(clone(baselineTree));
+  check(
+    'Python test inventory accepts the isolated exact baseline while excluding Blender smoke files',
+    baselineInventory.diagnostics.length === 0
+      && JSON.stringify(baselineInventory.files) === JSON.stringify(expectedPythonTestModules),
+  );
+
+  for (const modulePath of expectedPythonTestModules) {
+    const deletedTree = clone(baselineTree);
+    const suiteRoot = expectedPythonTestRoots.find((candidate) => modulePath.startsWith(`${candidate}/`));
+    const fileName = path.posix.basename(modulePath);
+    deletedTree[suiteRoot].entries = deletedTree[suiteRoot].entries.filter((entry) => entry !== fileName);
+    delete deletedTree[modulePath];
+    const deletion = inventoryForTree(deletedTree);
+    let spawnCalls = 0;
+    const output = fixtureLogger();
+    const status = runPythonTestsMain({
+      env: { PYTHON: 'fixture-python' },
+      fsApi: fakeFilesystem(fakeRoot, deletedTree),
+      logger: output.logger,
+      root: fakeRoot,
+      spawn: () => {
+        spawnCalls += 1;
+        return { status: 0 };
+      },
+    });
+    check(
+      `Python test deletion fixture fails before spawn: ${modulePath}`,
+      deletion.diagnostics.some((item) => (
+        item.operation === 'inventory'
+          && item.path === modulePath
+          && /required Python test module is missing/.test(item.detail)
+      ))
+        && status === 1
+        && spawnCalls === 0
+        && output.errors.some((message) => message.includes(modulePath)),
+      deletion.diagnostics.map((item) => `${item.operation}:${item.path}:${item.detail}`).join('; '),
+    );
+  }
+
+  const additiveTree = clone(baselineTree);
+  additiveTree['backend/tests'].entries.push('test_unapproved.py');
+  additiveTree['backend/tests/test_unapproved.py'] = { type: 'file' };
+  const additive = inventoryForTree(additiveTree);
+  check(
+    'Python test inventory rejects an additive test_*.py module',
+    additive.diagnostics.some((item) => (
+      item.path === 'backend/tests/test_unapproved.py'
+        && /unexpected Python test module/.test(item.detail)
+    )) && runnerRejectsBeforeSpawn(additiveTree),
+  );
+
+  const nestedTree = clone(baselineTree);
+  nestedTree['backend/tests'].entries.push('nested');
+  nestedTree['backend/tests/nested'] = { entries: ['test_hidden.py'], type: 'directory' };
+  nestedTree['backend/tests/nested/test_hidden.py'] = { type: 'file' };
+  const nested = inventoryForTree(nestedTree);
+  check(
+    'Python test inventory rejects a nested unapproved test module',
+    nested.diagnostics.some((item) => item.path === 'backend/tests/nested/test_hidden.py')
+      && runnerRejectsBeforeSpawn(nestedTree),
+  );
+
+  const renamedTree = clone(baselineTree);
+  renamedTree['blender_addon/tests'].entries = renamedTree['blender_addon/tests'].entries
+    .filter((entry) => entry !== 'test_preview.py');
+  renamedTree['blender_addon/tests'].entries.push('test_preview_renamed.py');
+  delete renamedTree['blender_addon/tests/test_preview.py'];
+  renamedTree['blender_addon/tests/test_preview_renamed.py'] = { type: 'file' };
+  const renamed = inventoryForTree(renamedTree);
+  check(
+    'Python test inventory rejects a renamed required module as missing plus unexpected',
+    renamed.diagnostics.some((item) => item.path === 'blender_addon/tests/test_preview.py' && /missing/.test(item.detail))
+      && renamed.diagnostics.some((item) => item.path === 'blender_addon/tests/test_preview_renamed.py' && /unexpected/.test(item.detail))
+      && runnerRejectsBeforeSpawn(renamedTree),
+  );
+
+  const caseAliasTree = clone(baselineTree);
+  caseAliasTree['blender_addon/tests'].entries = caseAliasTree['blender_addon/tests'].entries
+    .filter((entry) => entry !== 'test_preview.py');
+  caseAliasTree['blender_addon/tests'].entries.push('TEST_preview.PY');
+  delete caseAliasTree['blender_addon/tests/test_preview.py'];
+  caseAliasTree['blender_addon/tests/TEST_preview.PY'] = { type: 'file' };
+  const caseAlias = inventoryForTree(caseAliasTree);
+  check(
+    'Python test inventory rejects platform-dependent case aliases',
+    caseAlias.diagnostics.some((item) => item.path === 'blender_addon/tests/test_preview.py' && /missing/.test(item.detail))
+      && caseAlias.diagnostics.some((item) => item.path === 'blender_addon/tests/TEST_preview.PY' && /unexpected/.test(item.detail))
+      && runnerRejectsBeforeSpawn(caseAliasTree),
+  );
+
+  const zeroTree = clone(baselineTree);
+  for (const suiteRoot of expectedPythonTestRoots) {
+    zeroTree[suiteRoot].entries = zeroTree[suiteRoot].entries.filter((entry) => !/^test_.*\.py$/i.test(entry));
+  }
+  for (const modulePath of expectedPythonTestModules) delete zeroTree[modulePath];
+  const zero = inventoryForTree(zeroTree);
+  check(
+    'Python test inventory rejects zero discovery in each required root',
+    expectedPythonTestRoots.every((suiteRoot) => zero.diagnostics.some((item) => (
+      item.operation === 'inventory'
+        && item.path === suiteRoot
+        && /no test_\*\.py modules/.test(item.detail)
+    ))) && runnerRejectsBeforeSpawn(zeroTree),
+  );
+
+  const missingRootTree = clone(baselineTree);
+  delete missingRootTree['backend/tests'];
+  const missingRoot = inventoryForTree(missingRootTree);
+  check(
+    'Python test inventory fails closed on a missing required root',
+    missingRoot.diagnostics.some((item) => item.operation === 'lstat' && item.path === 'backend/tests')
+      && runnerRejectsBeforeSpawn(missingRootTree),
+  );
+
+  const fileRootTree = clone(baselineTree);
+  fileRootTree['backend/tests'] = { type: 'file' };
+  const fileRoot = inventoryForTree(fileRootTree);
+  check(
+    'Python test inventory requires every configured root to be a directory',
+    fileRoot.diagnostics.some((item) => /required Python test root(?: path component)? must be a directory/.test(item.detail))
+      && runnerRejectsBeforeSpawn(fileRootTree),
+  );
+
+  const unreadableTree = clone(baselineTree);
+  unreadableTree['backend/tests'].readdirError = 'permission denied';
+  const unreadable = inventoryForTree(unreadableTree);
+  check(
+    'Python test inventory fails closed on an unreadable required root',
+    unreadable.diagnostics.some((item) => item.operation === 'readdir' && item.path === 'backend/tests')
+      && runnerRejectsBeforeSpawn(unreadableTree),
+  );
+
+  const symlinkRootTree = clone(baselineTree);
+  symlinkRootTree['backend/tests'].type = 'symlink';
+  const symlinkRoot = inventoryForTree(symlinkRootTree);
+  check(
+    'Python test inventory rejects a symlinked or junction-backed required root before spawn',
+    symlinkRoot.diagnostics.some((item) => (
+      item.operation === 'lstat'
+        && item.path === 'backend/tests'
+        && /symbolic links and junctions/.test(item.detail)
+    )) && runnerRejectsBeforeSpawn(symlinkRootTree),
+  );
+
+  const symlinkTree = clone(baselineTree);
+  symlinkTree['backend/tests/test_cli.py'].type = 'symlink';
+  const symlink = inventoryForTree(symlinkTree);
+  check(
+    'Python test inventory rejects symlink or junction entries',
+    symlink.diagnostics.some((item) => /symbolic links and junctions/.test(item.detail))
+      && symlink.diagnostics.some((item) => item.path === 'backend/tests/test_cli.py' && /missing/.test(item.detail))
+      && runnerRejectsBeforeSpawn(symlinkTree),
+  );
+
+  const wrongTypeTree = clone(baselineTree);
+  wrongTypeTree['backend/tests/test_cli.py'] = { entries: [], type: 'directory' };
+  const wrongType = inventoryForTree(wrongTypeTree);
+  check(
+    'Python test inventory rejects an allowlisted module that is not a regular file',
+    wrongType.diagnostics.some((item) => /test module path must be a regular file/.test(item.detail))
+      && runnerRejectsBeforeSpawn(wrongTypeTree),
+  );
+
+  const unsupportedTree = clone(baselineTree);
+  unsupportedTree['backend/tests/fixtures'].entries.push('device');
+  unsupportedTree['backend/tests/fixtures/device'] = { type: 'unknown' };
+  const unsupported = inventoryForTree(unsupportedTree);
+  check(
+    'Python test inventory rejects unsupported filesystem entry types',
+    unsupported.diagnostics.some((item) => /unsupported filesystem entry type/.test(item.detail))
+      && runnerRejectsBeforeSpawn(unsupportedTree),
+  );
+
+  const packageTree = clone(baselineTree);
+  packageTree['backend/tests'].entries.push('nested_package');
+  packageTree['backend/tests/nested_package'] = { entries: ['__init__.py'], type: 'directory' };
+  packageTree['backend/tests/nested_package/__init__.py'] = { type: 'file' };
+  const packageMarker = inventoryForTree(packageTree);
+  check(
+    'Python test inventory rejects nested unittest discovery package markers',
+    packageMarker.diagnostics.some((item) => (
+      item.path === 'backend/tests/nested_package/__init__.py'
+        && /package markers are not allowed/.test(item.detail)
+    )) && runnerRejectsBeforeSpawn(packageTree),
+  );
+
+  const rootCaseTree = clone(baselineTree);
+  rootCaseTree.backend.entries = ['Tests'];
+  const rootCase = inventoryForTree(rootCaseTree);
+  check(
+    'Python test inventory rejects required-root case aliases before traversal',
+    rootCase.diagnostics.some((item) => item.operation === 'spelling' && item.path === 'backend/tests')
+      && runnerRejectsBeforeSpawn(rootCaseTree),
+  );
+
+  const duplicateTree = clone(baselineTree);
+  duplicateTree['backend/tests'].entries.push('test_cli.py');
+  const duplicate = inventoryForTree(duplicateTree);
+  check(
+    'Python test inventory rejects duplicate discovered module paths before spawn',
+    duplicate.diagnostics.some((item) => (
+      item.path === 'backend/tests/test_cli.py'
+        && /duplicate Python test module/.test(item.detail)
+    )) && runnerRejectsBeforeSpawn(duplicateTree),
+  );
+
+  for (const [name, options] of [
+    ['reordered module allowlist', { expectedModules: [...expectedPythonTestModules].reverse() }],
+    ['duplicate module allowlist', { expectedModules: [...expectedPythonTestModules, expectedPythonTestModules.at(-1)] }],
+    ['empty module allowlist', { expectedModules: [] }],
+    ['reordered test roots', { roots: [...expectedPythonTestRoots].reverse() }],
+    ['duplicate test roots', { roots: [...expectedPythonTestRoots, expectedPythonTestRoots.at(-1)] }],
+    ['empty test roots', { roots: [] }],
+    ['escaping test root', { roots: ['../outside', ...expectedPythonTestRoots] }],
+    ['backslash module path', { expectedModules: ['backend\\tests\\test_cli.py', ...expectedPythonTestModules.slice(1)] }],
+    ['dot-prefixed module path', { expectedModules: ['./backend/tests/test_cli.py', ...expectedPythonTestModules.slice(1)] }],
+    ['dot-segment module path', { expectedModules: ['backend/tests/../tests/test_cli.py', ...expectedPythonTestModules.slice(1)] }],
+    ['repeated-separator module path', { expectedModules: ['backend//tests/test_cli.py', ...expectedPythonTestModules.slice(1)] }],
+    ['Windows drive test root', { roots: ['C:/outside', ...expectedPythonTestRoots] }],
+    ['UNC test root', { roots: ['//server/share', ...expectedPythonTestRoots] }],
+  ]) {
+    const contractFailure = inventoryForTree(clone(baselineTree), options);
+    check(
+      `Python test inventory rejects ${name}`,
+      contractFailure.diagnostics.some((item) => item.operation === 'contract'),
+    );
+  }
+
+  const importProbe = spawnSync(process.execPath, [
+    '--input-type=module',
+    '--eval',
+    `await import(${JSON.stringify(pathToFileURL(path.join(root, 'scripts', 'run-python-tests.mjs')).href)})`,
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 30_000,
+    windowsHide: true,
+  });
+  check(
+    'Python test runner import is side-effect free',
+    importProbe.status === 0 && importProbe.stdout === '' && importProbe.stderr === '',
+    [
+      `status=${String(importProbe.status)}`,
+      `signal=${String(importProbe.signal)}`,
+      `error=${importProbe.error ? errorDetailForCheck(importProbe.error) : '<none>'}`,
+      `stdout=${JSON.stringify(importProbe.stdout)}`,
+      `stderr=${JSON.stringify(importProbe.stderr)}`,
+    ].join('; '),
+  );
+
+  const baselineCalls = [];
+  const baselineOutput = fixtureLogger();
+  const baselineStatus = runPythonTestsMain({
+    env: { PYTHON: 'fixture-python' },
+    fsApi: fakeFilesystem(fakeRoot, clone(baselineTree)),
+    logger: baselineOutput.logger,
+    root: fakeRoot,
+    spawn: (command, args, options) => {
+      baselineCalls.push({ args, command, options });
+      return { status: 0 };
+    },
+  });
+  check(
+    'Python test runner probes once then runs both approved unittest discovery suites in order',
+    baselineStatus === 0
+      && baselineOutput.errors.length === 0
+      && baselineCalls.length === 3
+      && baselineCalls[0].command === 'fixture-python'
+      && JSON.stringify(baselineCalls[0].args) === JSON.stringify(['--version'])
+      && JSON.stringify(baselineCalls[1].args) === JSON.stringify(['-m', 'unittest', 'discover', '-s', 'backend/tests', '-p', 'test_*.py'])
+      && JSON.stringify(baselineCalls[2].args) === JSON.stringify(['-m', 'unittest', 'discover', '-s', 'blender_addon/tests', '-p', 'test_*.py'])
+      && baselineCalls.every((call) => call.options.cwd === fakeRoot && call.options.windowsHide === true),
+  );
+
+  const failureCalls = [];
+  const failureOutput = fixtureLogger();
+  const failureStatus = runPythonTestsMain({
+    env: { PYTHON: 'fixture-python' },
+    fsApi: fakeFilesystem(fakeRoot, clone(baselineTree)),
+    logger: failureOutput.logger,
+    root: fakeRoot,
+    spawn: (_command, args) => {
+      failureCalls.push(args);
+      if (args.includes('backend/tests')) return { status: 1 };
+      return { status: 0 };
+    },
+  });
+  check(
+    'Python test runner preserves both-suite execution and propagates a suite failure',
+    failureStatus === 1
+      && failureCalls.length === 3
+      && failureCalls.some((args) => args.includes('backend/tests'))
+      && failureCalls.some((args) => args.includes('blender_addon/tests')),
+  );
 }
 
 if (exists('scripts/run-packaging-smoke.mjs')) {
@@ -1066,20 +2227,1150 @@ if (exists('.gitignore')) {
 }
 
 if (exists('scripts/install-hooks.mjs')) {
-  const installer = read('scripts/install-hooks.mjs');
-  const errors = nativeHookErrors(installer);
-  check('native Git hook installer has the exact pre-commit and pre-push map', errors.length === 0, errors.join('; '));
+  const errors = nativeHookContractErrors(NATIVE_HOOKS);
+  check('native Git hook installer has the exact pre-commit and pre-push contract', errors.length === 0, errors.join('; '));
+  for (const [name, mutant] of [
+    [
+      'pre-commit command drift',
+      NATIVE_HOOKS.map((entry) => (
+        entry.name === 'pre-commit' ? { ...entry, command: 'npm run verify' } : entry
+      )),
+    ],
+    [
+      'pre-push command drift',
+      NATIVE_HOOKS.map((entry) => (
+        entry.name === 'pre-push' ? { ...entry, command: 'npm run quality:deep' } : entry
+      )),
+    ],
+    ['additive entries', [...NATIVE_HOOKS, { name: 'post-commit', command: 'npm run verify' }]],
+    ['deleted entries', NATIVE_HOOKS.slice(0, 1)],
+    ['reordered entries', [...NATIVE_HOOKS].reverse()],
+  ]) {
+    let fsAccesses = 0;
+    let spawnCalls = 0;
+    const mutationTrapFs = new Proxy({}, {
+      get() {
+        fsAccesses += 1;
+        throw new Error('mutant reached filesystem');
+      },
+    });
+    const failure = expectInstallerFailure(
+      () => installNativeHooksCore({
+        fsApi: mutationTrapFs,
+        hooks: mutant,
+        root,
+        spawn() {
+          spawnCalls += 1;
+          throw new Error('mutant reached Git process');
+        },
+      }),
+      /exact managed hook contract/,
+    );
+    check(
+      `native Git hook production boundary rejects ${name} before mutation`,
+      nativeHookContractErrors(mutant).length > 0
+        && failure.threw
+        && fsAccesses === 0
+        && spawnCalls === 0,
+      failure.message,
+    );
+  }
+  for (const { name, command } of expectedNativeHooks) {
+    check(
+      `native Git hook body is independently exact: ${name}`,
+      nativeHookBody(command) === expectedNativeHookBody(command),
+    );
+    check(
+      `legacy native Git hook body is independently exact: ${name}`,
+      legacyNativeHookBody(command) === expectedNativeHookBody(command, { legacy: true }),
+    );
+  }
+
+  let liveHooksDir = null;
+  let liveHookSentinel = null;
+  try {
+    liveHooksDir = resolveActiveHooksDirectory({ root });
+    liveHookSentinel = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(liveHooksDir, name))
+    ));
+    check('native Git hook live sentinel was captured read-only', true);
+  } catch (error) {
+    check('native Git hook live sentinel was captured read-only', false, errorDetailForCheck(error));
+  }
+
+  const fakeHooksDir = path.join(root, '.git', 'hooks');
+  const successfulResolver = resolverSpawn(root, fakeHooksDir);
+  let fakeResolved = '';
+  try {
+    fakeResolved = resolveActiveHooksDirectory({ root, spawn: successfulResolver.spawn });
+  } catch {
+    fakeResolved = '';
+  }
   check(
-    'native Git hook negative fixture rejects pre-commit drift',
-    nativeHookErrors(installer.replace('npm run quality:fast', 'npm run verify')).length > 0,
+    'native Git hook resolver accepts its exact process baseline',
+    sameFixturePath(fakeResolved, fakeHooksDir),
   );
   check(
-    'native Git hook negative fixture rejects pre-push drift',
-    nativeHookErrors(installer.replace('npm run codex:ship', 'npm run quality:deep')).length > 0,
+    'native Git hook resolver invokes bounded no-shell root active and lexical probes',
+    successfulResolver.calls.length === 3
+      && successfulResolver.calls.every((call) => (
+        call.command === 'git'
+          && call.options.cwd === path.resolve(root)
+          && call.options.encoding === 'utf8'
+          && call.options.killSignal === 'SIGTERM'
+          && call.options.timeout === 10_000
+          && call.options.windowsHide === true
+          && call.options.shell === undefined
+      ))
+      && JSON.stringify(successfulResolver.calls[0].args) === JSON.stringify([
+        'rev-parse', '--show-toplevel',
+      ])
+      && JSON.stringify(successfulResolver.calls[1].args) === JSON.stringify([
+        'rev-parse', '--path-format=absolute', '--git-path', 'hooks',
+      ])
+      && JSON.stringify(successfulResolver.calls[2].args) === JSON.stringify([
+        'rev-parse', '--git-path', 'hooks',
+      ]),
   );
-  check('hooks installer marks owned hooks', /managed-by: 3d_in_blueprints-codex-infra/.test(installer));
-  check('hooks installer refuses unmanaged hooks', /Refusing to overwrite unmanaged Git hook/.test(installer));
-  check('hooks installer can adopt legacy managed hooks', /legacyHookBody/.test(installer) && /legacyOwned/.test(installer));
+
+  for (const [name, result] of [
+    ['spawn error', { error: Object.assign(new Error('missing git'), { code: 'ENOENT' }), signal: null, status: null, stderr: '', stdout: '' }],
+    ['timeout', { error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }), signal: null, status: null, stderr: '', stdout: '' }],
+    ['signal', { error: null, signal: 'SIGTERM', status: null, stderr: '', stdout: '' }],
+    ['null status', { error: null, signal: null, status: null, stderr: '', stdout: '' }],
+    ['nonzero status', { error: null, signal: null, status: 128, stderr: 'not a repository', stdout: '' }],
+    ['success stderr', { error: null, signal: null, status: 0, stderr: 'warning', stdout: `${fakeHooksDir}\n` }],
+    ['empty stdout', { error: null, signal: null, status: 0, stderr: '', stdout: '' }],
+    ['multiple paths', { error: null, signal: null, status: 0, stderr: '', stdout: `${fakeHooksDir}\n${fakeHooksDir}\n` }],
+    ['relative path', { error: null, signal: null, status: 0, stderr: '', stdout: '.git/hooks\n' }],
+  ]) {
+    const fixture = resolverSpawn(root, fakeHooksDir, result);
+    check(
+      `native Git hook resolver rejects ${name}`,
+      expectInstallerFailure(() => resolveActiveHooksDirectory({ root, spawn: fixture.spawn })).threw,
+    );
+  }
+  check(
+    'native Git hook resolver rejects a thrown process exception',
+    expectInstallerFailure(() => resolveActiveHooksDirectory({
+      root,
+      spawn() { throw Object.assign(new Error('spawn threw'), { code: 'EACCES' }); },
+    })).threw,
+  );
+  const wrongRootResolver = resolverSpawn(path.join(root, 'nested'), fakeHooksDir);
+  check(
+    'native Git hook resolver rejects a parent or wrong repository root',
+    expectInstallerFailure(() => resolveActiveHooksDirectory({
+      root,
+      spawn: wrongRootResolver.spawn,
+    }), /intended repository root/).threw,
+  );
+  let lexicalMismatchCall = 0;
+  const lexicalMismatchSpawn = () => {
+    lexicalMismatchCall += 1;
+    const stdout = lexicalMismatchCall === 1
+      ? `${root}\n`
+      : lexicalMismatchCall === 2
+        ? `${fakeHooksDir}\n`
+        : `${path.join(root, 'redirected-hooks')}\n`;
+    return { error: null, signal: null, status: 0, stderr: '', stdout };
+  };
+  check(
+    'native Git hook resolver rejects a deterministic lexical-active path mismatch',
+    expectInstallerFailure(() => resolveActiveHooksDirectory({
+      root,
+      spawn: lexicalMismatchSpawn,
+    }), /reparse redirect/).threw
+      && lexicalMismatchCall === 3,
+  );
+
+  const ambientEscapeContainer = mkdtempSync(path.join(tmpdir(), 'blueprints-native-hooks-escape-'));
+  try {
+    const ambientHooksDir = path.join(ambientEscapeContainer, 'ambient hooks');
+    const ambientTemplateDir = path.join(ambientEscapeContainer, 'ambient template');
+    const ambientTemplateHooks = path.join(ambientTemplateDir, 'hooks');
+    const ambientGlobalConfig = path.join(ambientEscapeContainer, 'ambient.gitconfig');
+    const escapeSentinel = path.join(ambientHooksDir, 'sentinel.txt');
+    mkdirSync(ambientHooksDir);
+    mkdirSync(ambientTemplateHooks, { recursive: true });
+    writeFileSync(escapeSentinel, 'external fixture sentinel', 'utf8');
+    writeFileSync(
+      path.join(ambientTemplateHooks, 'pre-commit'),
+      '#!/bin/sh\necho hostile-template\n',
+      'utf8',
+    );
+    writeFileSync(
+      ambientGlobalConfig,
+      `[core]\n\thooksPath = "${ambientHooksDir.replace(/\\/g, '/')}"\n`,
+      'utf8',
+    );
+    const escapeManifestBefore = nativeHookDirectoryManifest(ambientHooksDir);
+    withNativeHookFixture(
+      'hostile-ambient-isolation',
+      ({ container, gitEnv, repo }) => {
+        const activeHooksDir = resolveActiveHooksDirectory({ root: repo });
+        const result = installNativeHooks({ root: repo });
+        const controlledKeys = new Set([
+          'GCM_INTERACTIVE',
+          'GIT_CONFIG_COUNT',
+          'GIT_CONFIG_GLOBAL',
+          'GIT_CONFIG_NOSYSTEM',
+          'GIT_TEMPLATE_DIR',
+          'GIT_TERMINAL_PROMPT',
+        ]);
+        const leakedConfigKeys = Object.keys(gitEnv).filter((key) => {
+          const upper = key.toUpperCase();
+          return /^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(upper)
+            || (controlledKeys.has(upper) && key !== upper);
+        });
+        check(
+          'native Git hook fixtures isolate hostile global system env and template configuration',
+          gitEnv.GIT_CONFIG_COUNT === '0'
+            && gitEnv.GIT_CONFIG_NOSYSTEM === '1'
+            && leakedConfigKeys.length === 0
+            && sameFixturePath(gitEnv.GIT_CONFIG_GLOBAL, path.join(container, 'isolated-global.gitconfig'))
+            && sameFixturePath(gitEnv.GIT_TEMPLATE_DIR, path.join(container, 'isolated-template'))
+            && sameFixturePath(activeHooksDir, path.join(repo, '.git', 'hooks'))
+            && sameFixturePath(result.hooksDir, activeHooksDir)
+            && installedHookErrors(activeHooksDir).length === 0
+            && !existsSync(path.join(repo, '.git', 'hooks', 'pre-commit.sample'))
+            && JSON.stringify(nativeHookDirectoryManifest(ambientHooksDir)) === JSON.stringify(escapeManifestBefore)
+            && readFileSync(escapeSentinel, 'utf8') === 'external fixture sentinel',
+        );
+      },
+      {
+        baseEnvFactory: () => ({
+          ...process.env,
+          git_config_count: '1',
+          git_config_global: ambientGlobalConfig,
+          git_config_key_0: 'core.hooksPath',
+          git_config_value_0: ambientHooksDir,
+          git_dir: path.join(ambientEscapeContainer, 'ambient.git'),
+          git_template_dir: ambientTemplateDir,
+          git_work_tree: ambientEscapeContainer,
+        }),
+      },
+    );
+  } finally {
+    cleanupNativeHookFixture(ambientEscapeContainer);
+  }
+
+  withNativeHookFixture('normal-cli', ({ gitEnv, repo }) => {
+    const scriptsDir = path.join(repo, 'scripts');
+    const copiedInstaller = path.join(scriptsDir, 'install-hooks.mjs');
+    mkdirSync(scriptsDir);
+    mkdirSync(path.join(scriptsDir, 'lib'));
+    copyFileSync(path.join(root, 'scripts', 'install-hooks.mjs'), copiedInstaller);
+    copyFileSync(
+      path.join(root, 'scripts', 'lib', 'native-hook-installer.mjs'),
+      path.join(scriptsDir, 'lib', 'native-hook-installer.mjs'),
+    );
+    const activeHooksDir = path.resolve(runFixtureGit(
+      repo,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'],
+    ));
+    const beforeImport = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(activeHooksDir, name))
+    ));
+    const importResult = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        `await import(${JSON.stringify(pathToFileURL(copiedInstaller).href)})`,
+      ],
+      {
+        cwd: repo,
+        encoding: 'utf8',
+        env: gitEnv,
+        killSignal: 'SIGTERM',
+        timeout: 10_000,
+        windowsHide: true,
+      },
+    );
+    const afterImport = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(activeHooksDir, name))
+    ));
+    check(
+      'native Git hook installer import is side-effect free',
+      importResult.status === 0
+        && importResult.signal === null
+        && !importResult.error
+        && importResult.stdout === ''
+        && importResult.stderr === ''
+        && JSON.stringify(afterImport) === JSON.stringify(beforeImport),
+    );
+    const invalidRootResult = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        [
+          `const module = await import(${JSON.stringify(pathToFileURL(copiedInstaller).href)});`,
+          "for (const root of ['', null]) {",
+          '  let rejected = false;',
+          '  try { module.main({ root }); } catch { rejected = true; }',
+          '  if (!rejected) process.exitCode = 1;',
+          '}',
+        ].join(' '),
+      ],
+      {
+        cwd: repo,
+        encoding: 'utf8',
+        env: gitEnv,
+        killSignal: 'SIGTERM',
+        timeout: 10_000,
+        windowsHide: true,
+      },
+    );
+    const afterInvalidRoot = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(activeHooksDir, name))
+    ));
+    check(
+      'native Git hook CLI boundary rejects explicit empty and null roots without fallback',
+      invalidRootResult.status === 0
+        && invalidRootResult.stdout === ''
+        && invalidRootResult.stderr === ''
+        && JSON.stringify(afterInvalidRoot) === JSON.stringify(beforeImport),
+    );
+
+    const cliResult = spawnSync(process.execPath, [copiedInstaller], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: gitEnv,
+      killSignal: 'SIGTERM',
+      timeout: 15_000,
+      windowsHide: true,
+    });
+    const expectedStdout = [
+      'installed pre-commit: npm run quality:fast',
+      'installed pre-push: npm run codex:ship',
+      `Codex infrastructure git hooks installed in ${activeHooksDir}.`,
+      '',
+    ].join('\n');
+    check(
+      'native Git hook CLI reports success only after exact read-back',
+      cliResult.status === 0
+        && cliResult.signal === null
+        && !cliResult.error
+        && cliResult.stderr === ''
+        && cliResult.stdout.replace(/\r\n/g, '\n') === expectedStdout,
+    );
+    const installedErrors = installedHookErrors(activeHooksDir);
+    check(
+      'native Git hook CLI installs exact bodies in the normal active path',
+      installedErrors.length === 0,
+      installedErrors.join('; '),
+    );
+
+    const beforeReinstall = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(activeHooksDir, name))
+    ));
+    const logs = [];
+    const reinstall = installNativeHooksMain({ log: (line) => logs.push(line), root: repo });
+    const afterReinstall = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(activeHooksDir, name))
+    ));
+    check(
+      'native Git hook managed reinstall is idempotent and truthful',
+      sameFixturePath(reinstall.hooksDir, activeHooksDir)
+        && JSON.stringify(afterReinstall) === JSON.stringify(beforeReinstall)
+        && logs.length === 3
+        && logs[2] === `Codex infrastructure git hooks installed in ${activeHooksDir}.`
+        && nativeHookTempArtifacts(activeHooksDir).length === 0,
+    );
+  });
+
+  withNativeHookFixture('linked-default', ({ container, repo }) => {
+    runFixtureGit(repo, [
+      '-c', 'user.name=Codex Fixture',
+      '-c', 'user.email=codex@example.invalid',
+      'commit', '--allow-empty', '--quiet', '-m', 'fixture',
+    ]);
+    const linked = path.join(container, 'linked worktree');
+    runFixtureGit(repo, ['worktree', 'add', '--detach', '--quiet', linked]);
+    const activeHooksDir = path.resolve(runFixtureGit(
+      linked,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'],
+    ));
+    const result = installNativeHooks({ root: linked });
+    const adminDir = path.resolve(runFixtureGit(linked, ['rev-parse', '--absolute-git-dir']));
+    const installedErrors = installedHookErrors(activeHooksDir);
+    check(
+      'native Git hook installer uses the common active path for linked worktrees',
+      sameFixturePath(result.hooksDir, activeHooksDir)
+        && installedErrors.length === 0
+        && !existsSync(path.join(adminDir, 'hooks', 'pre-commit'))
+        && !existsSync(path.join(adminDir, 'hooks', 'pre-push')),
+      installedErrors.join('; '),
+    );
+  });
+
+  withNativeHookFixture('relative-hooks-path', ({ container, repo }) => {
+    runFixtureGit(repo, ['config', 'core.hooksPath', 'relative hooks \u0442\u0435\u0441\u0442']);
+    runFixtureGit(repo, [
+      '-c', 'user.name=Codex Fixture',
+      '-c', 'user.email=codex@example.invalid',
+      'commit', '--allow-empty', '--quiet', '-m', 'fixture',
+    ]);
+    const linked = path.join(container, 'linked relative worktree');
+    runFixtureGit(repo, ['worktree', 'add', '--detach', '--quiet', linked]);
+    const mainResult = installNativeHooks({ root: repo });
+    const linkedResult = installNativeHooks({ root: linked });
+    const mainExpected = path.resolve(runFixtureGit(
+      repo,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'],
+    ));
+    const linkedExpected = path.resolve(runFixtureGit(
+      linked,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'],
+    ));
+    check(
+      'native Git hook installer honors worktree-relative core.hooksPath',
+      sameFixturePath(mainResult.hooksDir, mainExpected)
+        && sameFixturePath(linkedResult.hooksDir, linkedExpected)
+        && !sameFixturePath(mainExpected, linkedExpected)
+        && installedHookErrors(mainExpected).length === 0
+        && installedHookErrors(linkedExpected).length === 0
+        && !existsSync(path.join(repo, '.git', 'hooks', 'pre-commit')),
+    );
+  });
+
+  withNativeHookFixture('absolute-hooks-path', ({ container, repo }) => {
+    const configured = path.join(container, 'absolute hooks \u0442\u0435\u0441\u0442');
+    runFixtureGit(repo, ['config', 'core.hooksPath', configured]);
+    runFixtureGit(repo, [
+      '-c', 'user.name=Codex Fixture',
+      '-c', 'user.email=codex@example.invalid',
+      'commit', '--allow-empty', '--quiet', '-m', 'fixture',
+    ]);
+    const linked = path.join(container, 'linked absolute worktree');
+    runFixtureGit(repo, ['worktree', 'add', '--detach', '--quiet', linked]);
+    const mainResult = installNativeHooks({ root: repo });
+    const linkedResult = installNativeHooks({ root: linked });
+    check(
+      'native Git hook installer honors one Git-selected absolute shared hooks path',
+      sameFixturePath(mainResult.hooksDir, configured)
+        && sameFixturePath(linkedResult.hooksDir, configured)
+        && installedHookErrors(configured).length === 0
+        && !existsSync(path.join(repo, '.git', 'hooks', 'pre-commit')),
+    );
+  });
+
+  withNativeHookFixture('legacy-adoption', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const preCommit = path.join(hooksDir, 'pre-commit');
+    const prePush = path.join(hooksDir, 'pre-push');
+    writeFileSync(
+      preCommit,
+      expectedNativeHookBody('npm run quality:fast', { legacy: true }).replace(/\n/g, '\r\n'),
+      'utf8',
+    );
+    writeFileSync(prePush, expectedNativeHookBody('npm run codex:ship', { legacy: true }), 'utf8');
+    installNativeHooks({ root: repo });
+    const installedErrors = installedHookErrors(hooksDir);
+    check(
+      'native Git hook installer adopts exact LF and CRLF legacy bodies',
+      installedErrors.length === 0,
+      installedErrors.join('; '),
+    );
+  });
+
+  for (const conflictName of ['pre-commit', 'pre-push']) {
+    withNativeHookFixture(`unmanaged-${conflictName}`, ({ repo }) => {
+      const hooksDir = resolveActiveHooksDirectory({ root: repo });
+      const conflict = path.join(hooksDir, conflictName);
+      writeFileSync(conflict, '#!/bin/sh\necho unmanaged\n', 'utf8');
+      const before = expectedNativeHooks.map(({ name }) => (
+        hookTargetSnapshot(path.join(hooksDir, name))
+      ));
+      const manifestBefore = nativeHookDirectoryManifest(hooksDir);
+      const logs = [];
+      const failure = expectInstallerFailure(
+        () => installNativeHooksMain({ log: (line) => logs.push(line), root: repo }),
+        /Refusing to overwrite unmanaged Git hook/,
+      );
+      const after = expectedNativeHooks.map(({ name }) => (
+        hookTargetSnapshot(path.join(hooksDir, name))
+      ));
+      check(
+        `native Git hook full preflight rejects unmanaged ${conflictName} without partial state`,
+        failure.threw
+          && logs.length === 0
+          && JSON.stringify(after) === JSON.stringify(before)
+          && JSON.stringify(nativeHookDirectoryManifest(hooksDir)) === JSON.stringify(manifestBefore),
+        failure.message,
+      );
+    });
+  }
+
+  withNativeHookFixture('forged-marker', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const forged = path.join(hooksDir, 'pre-push');
+    const body = [
+      '#!/bin/sh',
+      '# managed-by: 3d_in_blueprints-codex-infra',
+      'echo forged unmanaged body',
+      '',
+    ].join('\n');
+    writeFileSync(forged, body, 'utf8');
+    const failure = expectInstallerFailure(
+      () => installNativeHooks({ root: repo }),
+      /Refusing to overwrite unmanaged Git hook/,
+    );
+    check(
+      'native Git hook ownership rejects a forged marker without takeover',
+      failure.threw
+        && readFileSync(forged, 'utf8') === body
+        && !existsSync(path.join(hooksDir, 'pre-commit')),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('cli-failure-output', ({ gitEnv, repo }) => {
+    const scriptsDir = path.join(repo, 'scripts');
+    const copiedInstaller = path.join(scriptsDir, 'install-hooks.mjs');
+    mkdirSync(scriptsDir);
+    mkdirSync(path.join(scriptsDir, 'lib'));
+    copyFileSync(path.join(root, 'scripts', 'install-hooks.mjs'), copiedInstaller);
+    copyFileSync(
+      path.join(root, 'scripts', 'lib', 'native-hook-installer.mjs'),
+      path.join(scriptsDir, 'lib', 'native-hook-installer.mjs'),
+    );
+    const hooksDir = path.resolve(runFixtureGit(
+      repo,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'hooks'],
+    ));
+    const conflict = path.join(hooksDir, 'pre-push');
+    writeFileSync(conflict, '#!/bin/sh\necho unmanaged\n', 'utf8');
+    const result = spawnSync(process.execPath, [copiedInstaller], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: gitEnv,
+      killSignal: 'SIGTERM',
+      timeout: 15_000,
+      windowsHide: true,
+    });
+    check(
+      'native Git hook CLI failure is nonzero with controlled stderr and no success stdout',
+      result.status === 1
+        && result.stdout === ''
+        && /Cannot install Git hooks:/.test(result.stderr)
+        && /unmanaged Git hook/.test(result.stderr)
+        && !/installed pre-|git hooks installed in/.test(result.stderr)
+        && !existsSync(path.join(hooksDir, 'pre-commit')),
+    );
+  });
+
+  withNativeHookFixture('nested-parent-root', ({ repo }) => {
+    const nested = path.join(repo, 'nested checkout without git metadata');
+    mkdirSync(nested);
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const before = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(hooksDir, name))
+    ));
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ log: (line) => logs.push(line), root: nested }),
+      /intended repository root/,
+    );
+    const after = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(hooksDir, name))
+    ));
+    check(
+      'native Git hook installer rejects a nested directory that would target a parent repository',
+      failure.threw && logs.length === 0 && JSON.stringify(after) === JSON.stringify(before),
+      failure.message,
+    );
+  });
+
+  let nonRepoContainer = null;
+  try {
+    nonRepoContainer = mkdtempSync(path.join(tmpdir(), 'blueprints-native-hooks-'));
+    const nonRepoContext = createIsolatedFixtureGitContext(nonRepoContainer);
+    nativeHookFixtureContexts.set(nonRepoContext.container, nonRepoContext);
+    const nonRepo = path.join(nonRepoContainer, 'not a repository');
+    mkdirSync(nonRepo);
+    const manifestBefore = readdirSync(nonRepo);
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ log: (line) => logs.push(line), root: nonRepo }),
+      /Git repository root lookup exited with status/,
+    );
+    check(
+      'native Git hook installer rejects a non-repository before filesystem mutation',
+      failure.threw
+        && logs.length === 0
+        && JSON.stringify(readdirSync(nonRepo)) === JSON.stringify(manifestBefore),
+      failure.message,
+    );
+  } catch (error) {
+    check('native Git hook non-repository fixture completes', false, errorDetailForCheck(error));
+  } finally {
+    if (nonRepoContainer) {
+      try {
+        cleanupNativeHookFixture(nonRepoContainer);
+      } catch (error) {
+        check('native Git hook non-repository fixture cleanup', false, errorDetailForCheck(error));
+      }
+    }
+  }
+
+  withNativeHookFixture('non-regular-target', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const target = path.join(hooksDir, 'pre-push');
+    mkdirSync(target);
+    const failure = expectInstallerFailure(
+      () => installNativeHooks({ root: repo }),
+      /not a regular file/,
+    );
+    check(
+      'native Git hook preflight rejects a directory target before first-hook mutation',
+      failure.threw
+        && lstatSync(target).isDirectory()
+        && !existsSync(path.join(hooksDir, 'pre-commit')),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('hard-linked-target', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const target = path.join(hooksDir, 'pre-push');
+    const linked = path.join(hooksDir, 'pre-push-linked-copy');
+    writeFileSync(target, expectedNativeHookBody('npm run codex:ship'), 'utf8');
+    linkSync(target, linked);
+    const failure = expectInstallerFailure(
+      () => installNativeHooks({ root: repo }),
+      /multiply-linked Git hook/,
+    );
+    check(
+      'native Git hook preflight rejects hard-linked targets without changing link topology',
+      failure.threw
+        && lstatSync(target).nlink === 2
+        && lstatSync(linked).nlink === 2
+        && !existsSync(path.join(hooksDir, 'pre-commit')),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('active-path-file', ({ container, repo }) => {
+    const configuredFile = path.join(container, 'hooks path is a file');
+    writeFileSync(configuredFile, 'sentinel', 'utf8');
+    runFixtureGit(repo, ['config', 'core.hooksPath', configuredFile]);
+    const failure = expectInstallerFailure(
+      () => installNativeHooks({ root: repo }),
+      /not a directory/,
+    );
+    check(
+      'native Git hook installer rejects a Git-selected non-directory active path',
+      failure.threw && readFileSync(configuredFile, 'utf8') === 'sentinel',
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('injected-reparse', ({ container, repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const redirected = path.join(container, 'redirected hooks');
+    mkdirSync(redirected);
+    const redirectedFs = nativeInstallerFs({
+      realpathSync(candidate) {
+        if (sameFixturePath(candidate, hooksDir)) return redirected;
+        return realpathSync(candidate);
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: redirectedFs, log: (line) => logs.push(line), root: repo }),
+      /reparse redirect/,
+    );
+    check(
+      'native Git hook preflight rejects a privilege-independent reparse redirect',
+      failure.threw
+        && logs.length === 0
+        && !existsSync(path.join(hooksDir, 'pre-commit'))
+        && !existsSync(path.join(redirected, 'pre-commit')),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('target-symlink-classifier', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const target = path.join(hooksDir, 'pre-push');
+    writeFileSync(target, expectedNativeHookBody('npm run codex:ship'), 'utf8');
+    const symlinkFs = nativeInstallerFs({
+      lstatSync(candidate) {
+        const stat = lstatSync(candidate);
+        if (!sameFixturePath(candidate, target)) return stat;
+        return {
+          isDirectory: () => false,
+          isFile: () => false,
+          isSymbolicLink: () => true,
+          mode: stat.mode,
+          nlink: stat.nlink,
+        };
+      },
+    });
+    const failure = expectInstallerFailure(
+      () => installNativeHooks({ fsApi: symlinkFs, root: repo }),
+      /symbolic-link, junction, or reparse Git hook/,
+    );
+    check(
+      'native Git hook target classifier rejects symlink or junction targets on every platform',
+      failure.threw
+        && !existsSync(path.join(hooksDir, 'pre-commit'))
+        && readFileSync(target, 'utf8') === expectedNativeHookBody('npm run codex:ship'),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('actual-hooks-junction', ({ container, repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const relative = path.relative(repo, hooksDir);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new Error(`unexpected default hooks path outside fixture repo: ${hooksDir}`);
+    }
+    const redirected = path.join(container, 'junction destination');
+    rmSync(hooksDir, { force: true, recursive: true });
+    mkdirSync(redirected);
+    let junctionCreated = false;
+    try {
+      symlinkSync(redirected, hooksDir, process.platform === 'win32' ? 'junction' : 'dir');
+      junctionCreated = true;
+    } catch (error) {
+      if (!['EACCES', 'EPERM', 'ENOTSUP'].includes(error?.code)) throw error;
+    }
+    if (junctionCreated) {
+      const junctionStat = lstatSync(hooksDir);
+      const junctionRealPath = realpathSync(hooksDir);
+      const failure = expectInstallerFailure(
+        () => installNativeHooks({ root: repo }),
+        /symbolic link or junction|reparse redirect/,
+      );
+      const redirectedPreCommit = existsSync(path.join(redirected, 'pre-commit'));
+      const redirectedPrePush = existsSync(path.join(redirected, 'pre-push'));
+      check(
+        'native Git hook preflight rejects an actual hooks-directory junction or symlink',
+        failure.threw
+          && !redirectedPreCommit
+          && !redirectedPrePush,
+        [
+          failure.message || 'installer returned success',
+          `isSymbolicLink=${junctionStat.isSymbolicLink()}`,
+          `realpath=${junctionRealPath}`,
+          `redirectedTargets=${redirectedPreCommit}/${redirectedPrePush}`,
+        ].join('; '),
+      );
+    } else {
+      check(
+        'native Git hook actual junction capability is explicitly deferred when unavailable',
+        true,
+        'platform denied junction or directory-symlink creation; injected reparse case remains mandatory',
+      );
+    }
+  });
+
+  withNativeHookFixture('mkdir-rollback', ({ repo }) => {
+    const configured = path.join(repo, 'created parent', 'created hooks');
+    runFixtureGit(repo, ['config', 'core.hooksPath', configured]);
+    let mkdirCalls = 0;
+    const failingFs = nativeInstallerFs({
+      mkdirSync(candidate) {
+        mkdirCalls += 1;
+        if (mkdirCalls === 2) throw Object.assign(new Error('injected mkdir failure'), { code: 'EACCES' });
+        return mkdirSync(candidate);
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: failingFs, log: (line) => logs.push(line), root: repo }),
+      /injected mkdir failure/,
+    );
+    check(
+      'native Git hook handled mkdir failure removes installer-created directories',
+      failure.threw
+        && logs.length === 0
+        && !existsSync(path.join(repo, 'created parent')),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('stage-write-rollback', ({ repo }) => {
+    const configured = path.join(repo, 'staged parent', 'active hooks');
+    runFixtureGit(repo, ['config', 'core.hooksPath', configured]);
+    let failed = false;
+    const failingFs = nativeInstallerFs({
+      writeFileSync(candidate, ...args) {
+        if (!failed && path.basename(candidate).includes('.pre-push.codex-stage-')) {
+          failed = true;
+          throw Object.assign(new Error('injected stage write failure'), { code: 'ENOSPC' });
+        }
+        return writeFileSync(candidate, ...args);
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: failingFs, log: (line) => logs.push(line), root: repo }),
+      /injected stage write failure/,
+    );
+    check(
+      'native Git hook handled stage-write failure leaves no targets directories or success output',
+      failure.threw
+        && logs.length === 0
+        && !existsSync(path.join(repo, 'staged parent')),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('chmod-rollback', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    for (const { name, command } of expectedNativeHooks) {
+      const target = path.join(hooksDir, name);
+      writeFileSync(target, expectedNativeHookBody(command), 'utf8');
+      chmodSync(target, name === 'pre-commit' ? 0o744 : 0o700);
+    }
+    const before = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(hooksDir, name))
+    ));
+    let failed = false;
+    const failingFs = nativeInstallerFs({
+      chmodSync(candidate, mode) {
+        if (!failed && sameFixturePath(candidate, path.join(hooksDir, 'pre-push'))) {
+          failed = true;
+          throw Object.assign(new Error('injected target chmod failure'), { code: 'EPERM' });
+        }
+        return chmodSync(candidate, mode);
+      },
+    });
+    const failure = expectInstallerFailure(
+      () => installNativeHooks({ fsApi: failingFs, root: repo }),
+      /injected target chmod failure/,
+    );
+    const after = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(hooksDir, name))
+    ));
+    check(
+      'native Git hook handled chmod failure restores exact prior bytes and modes',
+      failure.threw
+        && JSON.stringify(after) === JSON.stringify(before)
+        && nativeHookTempArtifacts(hooksDir).length === 0,
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('second-rename-rollback', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    for (const { name, command } of expectedNativeHooks) {
+      const lineEnding = name === 'pre-commit' ? '\r\n' : '\n';
+      writeFileSync(
+        path.join(hooksDir, name),
+        expectedNativeHookBody(command, { legacy: true }).replace(/\n/g, lineEnding),
+        'utf8',
+      );
+      chmodSync(path.join(hooksDir, name), name === 'pre-commit' ? 0o744 : 0o700);
+    }
+    const before = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(hooksDir, name))
+    ));
+    let failed = false;
+    const failingFs = nativeInstallerFs({
+      renameSync(source, destination) {
+        if (
+          !failed
+          && sameFixturePath(destination, path.join(hooksDir, 'pre-push'))
+          && path.basename(source).includes('.pre-push.codex-stage-')
+        ) {
+          failed = true;
+          throw Object.assign(new Error('injected second rename failure'), { code: 'EPERM' });
+        }
+        return renameSync(source, destination);
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: failingFs, log: (line) => logs.push(line), root: repo }),
+      /injected second rename failure/,
+    );
+    const after = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(hooksDir, name))
+    ));
+    check(
+      'native Git hook second-target rename failure rolls back exact legacy bytes and modes',
+      failure.threw
+        && logs.length === 0
+        && JSON.stringify(after) === JSON.stringify(before)
+        && nativeHookTempArtifacts(hooksDir).length === 0,
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('readback-rollback', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const preCommit = path.join(hooksDir, 'pre-commit');
+    let mismatched = false;
+    const failingFs = nativeInstallerFs({
+      readFileSync(candidate, ...args) {
+        const value = readFileSync(candidate, ...args);
+        if (!mismatched && sameFixturePath(candidate, preCommit) && args[0] === 'utf8') {
+          mismatched = true;
+          return `${value}read-back mismatch`;
+        }
+        return value;
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: failingFs, log: (line) => logs.push(line), root: repo }),
+      /read-back differs/,
+    );
+    check(
+      'native Git hook final read-back mismatch rolls back both new targets',
+      failure.threw
+        && logs.length === 0
+        && !existsSync(preCommit)
+        && !existsSync(path.join(hooksDir, 'pre-push'))
+        && nativeHookTempArtifacts(hooksDir).length === 0,
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('verified-recovery-candidate', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const preCommit = path.join(hooksDir, 'pre-commit');
+    const prePush = path.join(hooksDir, 'pre-push');
+    seedLegacyNativeHooks(hooksDir);
+    const originalPreCommit = hookTargetSnapshot(preCommit);
+    const originalPrePush = hookTargetSnapshot(prePush);
+    let forcedReadbackFailure = false;
+    let forcedRollbackRenameFailure = false;
+    const failingFs = nativeInstallerFs({
+      readFileSync(candidate, ...args) {
+        const value = readFileSync(candidate, ...args);
+        if (
+          !forcedReadbackFailure
+          && sameFixturePath(candidate, preCommit)
+          && args[0] === 'utf8'
+        ) {
+          forcedReadbackFailure = true;
+          return `${value}force rollback`;
+        }
+        return value;
+      },
+      renameSync(source, destination) {
+        if (
+          !forcedRollbackRenameFailure
+          && sameFixturePath(destination, prePush)
+          && path.basename(source).includes('.pre-push.codex-rollback-')
+        ) {
+          forcedRollbackRenameFailure = true;
+          throw Object.assign(new Error('injected rollback rename failure'), { code: 'EPERM' });
+        }
+        return renameSync(source, destination);
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: failingFs, log: (line) => logs.push(line), root: repo }),
+      /Rollback also failed/,
+    );
+    const recoveryMatch = /recovery candidate preserved at ([^;]+)$/.exec(failure.message);
+    const recoveryPath = recoveryMatch?.[1] || '';
+    const recoverySnapshot = recoveryPath ? hookTargetSnapshot(recoveryPath) : { exists: false };
+    check(
+      'native Git hook rollback failure preserves and truthfully reports one verified recovery candidate',
+      failure.threw
+        && forcedReadbackFailure
+        && forcedRollbackRenameFailure
+        && logs.length === 0
+        && recoveryPath !== ''
+        && sameFixturePath(path.dirname(recoveryPath), hooksDir)
+        && path.basename(recoveryPath).includes('.pre-push.codex-rollback-')
+        && JSON.stringify(recoverySnapshot) === JSON.stringify(originalPrePush)
+        && JSON.stringify(hookTargetSnapshot(preCommit)) === JSON.stringify(originalPreCommit)
+        && readFileSync(prePush, 'utf8') === expectedNativeHookBody('npm run codex:ship')
+        && nativeHookTempArtifacts(hooksDir).length === 1
+        && sameFixturePath(path.join(hooksDir, nativeHookTempArtifacts(hooksDir)[0]), recoveryPath),
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('rollback-write-failure', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const preCommit = path.join(hooksDir, 'pre-commit');
+    const prePush = path.join(hooksDir, 'pre-push');
+    seedLegacyNativeHooks(hooksDir);
+    const originalPreCommit = hookTargetSnapshot(preCommit);
+    let forcedReadbackFailure = false;
+    let forcedRollbackWriteFailure = false;
+    const failingFs = nativeInstallerFs({
+      readFileSync(candidate, ...args) {
+        const value = readFileSync(candidate, ...args);
+        if (
+          !forcedReadbackFailure
+          && sameFixturePath(candidate, preCommit)
+          && args[0] === 'utf8'
+        ) {
+          forcedReadbackFailure = true;
+          return `${value}force rollback`;
+        }
+        return value;
+      },
+      writeFileSync(candidate, ...args) {
+        if (
+          !forcedRollbackWriteFailure
+          && path.basename(candidate).includes('.pre-push.codex-rollback-')
+        ) {
+          forcedRollbackWriteFailure = true;
+          throw Object.assign(new Error('injected rollback write failure'), { code: 'ENOSPC' });
+        }
+        return writeFileSync(candidate, ...args);
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: failingFs, log: (line) => logs.push(line), root: repo }),
+      /Rollback also failed/,
+    );
+    check(
+      'native Git hook rollback write failure reports no unverified recovery candidate',
+      failure.threw
+        && forcedReadbackFailure
+        && forcedRollbackWriteFailure
+        && logs.length === 0
+        && !/recovery candidate preserved at/.test(failure.message)
+        && JSON.stringify(hookTargetSnapshot(preCommit)) === JSON.stringify(originalPreCommit)
+        && readFileSync(prePush, 'utf8') === expectedNativeHookBody('npm run codex:ship')
+        && nativeHookTempArtifacts(hooksDir).length === 0,
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('corrupt-recovery-candidate', ({ repo }) => {
+    const hooksDir = resolveActiveHooksDirectory({ root: repo });
+    const preCommit = path.join(hooksDir, 'pre-commit');
+    const prePush = path.join(hooksDir, 'pre-push');
+    seedLegacyNativeHooks(hooksDir);
+    const originalPreCommit = hookTargetSnapshot(preCommit);
+    let forcedReadbackFailure = false;
+    let corruptedRecovery = false;
+    const failingFs = nativeInstallerFs({
+      readFileSync(candidate, ...args) {
+        const value = readFileSync(candidate, ...args);
+        if (
+          !forcedReadbackFailure
+          && sameFixturePath(candidate, preCommit)
+          && args[0] === 'utf8'
+        ) {
+          forcedReadbackFailure = true;
+          return `${value}force rollback`;
+        }
+        return value;
+      },
+      writeFileSync(candidate, value, ...args) {
+        if (
+          !corruptedRecovery
+          && path.basename(candidate).includes('.pre-push.codex-rollback-')
+        ) {
+          corruptedRecovery = true;
+          return writeFileSync(candidate, Buffer.from('corrupt recovery'), ...args);
+        }
+        return writeFileSync(candidate, value, ...args);
+      },
+    });
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({ fsApi: failingFs, log: (line) => logs.push(line), root: repo }),
+      /Rollback also failed/,
+    );
+    check(
+      'native Git hook rollback rejects and removes a corrupt unverified recovery candidate',
+      failure.threw
+        && forcedReadbackFailure
+        && corruptedRecovery
+        && logs.length === 0
+        && /recovery candidate bytes differ/.test(failure.message)
+        && !/recovery candidate preserved at/.test(failure.message)
+        && JSON.stringify(hookTargetSnapshot(preCommit)) === JSON.stringify(originalPreCommit)
+        && readFileSync(prePush, 'utf8') === expectedNativeHookBody('npm run codex:ship')
+        && nativeHookTempArtifacts(hooksDir).length === 0,
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('path-change-rollback', ({ container, repo }) => {
+    const firstHooksDir = path.join(repo, '.git', 'hooks');
+    const changedHooksDir = path.join(container, 'changed active hooks');
+    const calls = [];
+    let absoluteHookLookups = 0;
+    const changingSpawn = (command, args, options) => {
+      calls.push({ args, command, options });
+      if (args.includes('--show-toplevel')) {
+        return { error: null, signal: null, status: 0, stderr: '', stdout: `${repo}\n` };
+      }
+      if (args.includes('--path-format=absolute')) absoluteHookLookups += 1;
+      const output = absoluteHookLookups <= 1 ? firstHooksDir : changedHooksDir;
+      return { error: null, signal: null, status: 0, stderr: '', stdout: `${output}\n` };
+    };
+    const failure = expectInstallerFailure(
+      () => installNativeHooks({ root: repo, spawn: changingSpawn }),
+      /hooks path changed after preflight/,
+    );
+    check(
+      'native Git hook installer rolls back staging when the active path changes after preflight',
+      failure.threw
+        && calls.length === 6
+        && !existsSync(path.join(firstHooksDir, 'pre-commit'))
+        && !existsSync(path.join(firstHooksDir, 'pre-push'))
+        && !existsSync(changedHooksDir)
+        && nativeHookTempArtifacts(firstHooksDir).length === 0,
+      failure.message,
+    );
+  });
+
+  withNativeHookFixture('final-path-change-rollback', ({ container, repo }) => {
+    const firstHooksDir = path.join(repo, '.git', 'hooks');
+    const changedHooksDir = path.join(container, 'final changed active hooks');
+    const calls = [];
+    let absoluteHookLookups = 0;
+    const changingSpawn = (command, args, options) => {
+      calls.push({ args, command, options });
+      if (args.includes('--show-toplevel')) {
+        return { error: null, signal: null, status: 0, stderr: '', stdout: `${repo}\n` };
+      }
+      if (args.includes('--path-format=absolute')) absoluteHookLookups += 1;
+      const output = absoluteHookLookups <= 2 ? firstHooksDir : changedHooksDir;
+      return { error: null, signal: null, status: 0, stderr: '', stdout: `${output}\n` };
+    };
+    const logs = [];
+    const failure = expectInstallerFailure(
+      () => installNativeHooksMain({
+        log: (line) => logs.push(line),
+        root: repo,
+        spawn: changingSpawn,
+      }),
+      /hooks path changed after installation read-back/,
+    );
+    check(
+      'native Git hook installer rolls back applied targets when the path changes before success',
+      failure.threw
+        && calls.length === 9
+        && logs.length === 0
+        && !existsSync(path.join(firstHooksDir, 'pre-commit'))
+        && !existsSync(path.join(firstHooksDir, 'pre-push'))
+        && !existsSync(changedHooksDir)
+        && nativeHookTempArtifacts(firstHooksDir).length === 0,
+      failure.message,
+    );
+  });
+
+  if (liveHooksDir && liveHookSentinel) {
+    const liveHookSentinelAfter = expectedNativeHooks.map(({ name }) => (
+      hookTargetSnapshot(path.join(liveHooksDir, name))
+    ));
+    check(
+      'native Git hook executable fixtures leave live active hooks byte-and-mode identical',
+      JSON.stringify(liveHookSentinelAfter) === JSON.stringify(liveHookSentinel),
+    );
+  }
 }
 
 if (exists('lefthook.yml')) {

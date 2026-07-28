@@ -31,6 +31,22 @@ The gate checks:
 - governance against stale source-repo rules and old pass totals;
 - exact package-script graph, CI topology, hook configuration, Lefthook/native
   parity, compatibility pointers, and frozen-decision live projections;
+- executable native-hook installer behavior in isolated temporary Git
+  repositories: import/CLI truthfulness, normal and linked worktrees, relative
+  and absolute `core.hooksPath`, exact managed and legacy ownership, full
+  two-target preflight, parent/non-repository rejection, non-regular, hardlink,
+  symlink/junction/reparse guards, hermetic system/global/env/template Git
+  configuration, confined active paths, and live-hook before/after sentinels;
+- native-hook process and transaction failures, including spawn, timeout,
+  signal, status, stderr/path ambiguity, mkdir, staged write, chmod,
+  second-target rename, final read-back, active-path change, exact rollback,
+  verified recovery preservation, corrupt/unverified recovery rejection,
+  created-directory cleanup, and absence of false success output or unintended
+  temporary debris;
+- executable `SessionStart` and `UserPromptSubmit` behavior, including exact
+  envelopes and event-specific context, deterministic/no-output cases,
+  malformed and typed prompt input, process failures, and negative semantic
+  mutants for scope, profiles, `codex:ship`, and review/fallback;
 - structural PostToolUse classification for path lists, MultiEdit and
   apply_patch payloads, including malformed payloads, traversal, drive, UNC,
   Win32 aliases, strongest-route selection, short-circuiting, and propagated
@@ -38,6 +54,12 @@ The gate checks:
 - fail-closed JavaScript discovery and process handling for missing, unreadable,
   symlinked, escaped, empty, invalid-syntax, error, signal, null-status, timeout,
   and empty-output cases;
+- exact Python test-module inventory before interpreter discovery, including an
+  independent ordered oracle, nonzero per-root discovery, one isolated deletion
+  mutant per allowlisted module, additive, duplicate, renamed, nested, case-alias, package
+  marker, path-contract, missing/unreadable root, symlink/junction, wrong-type,
+  unsupported entry, import-side-effect, no-spawn-on-failure, and two-suite
+  order cases;
 - append-only historical handoff log presence.
 - backend CLI, DrawingIR, SVG, and diagnostics behavior covered by Python
   stdlib `unittest` tests.

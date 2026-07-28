@@ -4,15 +4,18 @@ process.stdin.on('data', (chunk) => {
   input += chunk;
 });
 
-process.stdin.on('end', () => {
-  let prompt = '';
+function promptFromInput(rawInput) {
   try {
-    const parsed = JSON.parse(input || '{}');
-    prompt = parsed.prompt || parsed.user_prompt || '';
+    const parsed = JSON.parse(rawInput || '{}');
+    const selectedPrompt = parsed?.prompt || parsed?.user_prompt || '';
+    return typeof selectedPrompt === 'string' ? selectedPrompt : '';
   } catch {
-    prompt = input || '';
+    return rawInput || '';
   }
+}
 
+process.stdin.on('end', () => {
+  const prompt = promptFromInput(input);
   const lower = prompt.toLowerCase();
   const triggers = [
     'implement',

@@ -11,10 +11,11 @@ contracts without making Node part of the product runtime.
   drift.
 - `scripts/check-js-syntax.mjs`: fail-closed discovery of the required `scripts`
   and `.codex/hooks` roots followed by deterministic `node --check` execution.
-- `scripts/run-python-tests.mjs`: resolves a local Python interpreter and runs
-  stdlib `unittest` discovery for backend, GOST composer, Dimensions v1,
-  Standards DB v1, Image Assist v1, release packaging behavior, and bridge
-  unit tests.
+- `scripts/run-python-tests.mjs`: owns the exact backend and add-on Python test
+  module inventory, validates it before interpreter discovery, and then runs
+  the two stdlib `unittest` discovery suites for backend, GOST composer,
+  Dimensions v1, Standards DB v1, Image Assist v1, release packaging behavior,
+  and bridge unit tests.
 - `scripts/run-blender-smoke.mjs`: resolves Blender 5.1 and runs full source plus
   installed two-ZIP bridge smoke in background mode. Normal invocation is
   strict; `--if-available` is the conditional PostToolUse mode.
@@ -23,10 +24,11 @@ contracts without making Node part of the product runtime.
 - `scripts/run-packaging-smoke.mjs`: resolves Python and runs packaging into a
   temporary directory, verifying required zip contents and artifact policy.
 - `scripts/verify-codex-infra.mjs`: validates required docs, hooks, agents,
-  CI, and authority contracts.
+  CI, authority contracts, and executable context-hook semantics.
 - `lefthook.yml`: optional local pre-commit and pre-push quality gates.
-- `npm run hooks:install`: installs owned native Git hooks for the same gates
-  and refuses to overwrite unmanaged local hooks.
+- `npm run hooks:install`: thin CLI over the import-safe native-hook installer
+  core. It installs the same gates only after Git-path, ownership, transaction,
+  and read-back checks succeed.
 - `.codex/hooks/post-tool-verify.js`: structurally classifies changed paths,
   runs `quality:deep` for governed changes, and then conditionally runs Blender
   for Blender-sensitive changes.
@@ -35,6 +37,89 @@ contracts without making Node part of the product runtime.
 `docs/handoff/ITERATION_LOG.md` is a historical handoff ledger, not an active
 policy source. It can preserve command output counts as evidence and is not part
 of stale-total governance scanning.
+
+## Context Hook Contract
+
+`SessionStart` emits one deterministic JSON envelope with the approved current
+repository context: `AGENTS.md` authority, selected product scope, active and
+dormant profiles, broad-work subagents, `codex:ship`, and review/fallback.
+
+A triggered `UserPromptSubmit` emits the narrower approved reminder subset:
+`AGENTS.md`, the selected Blender add-on plus backend scope, broad-work
+subagents, `codex:ship`, and review/fallback. It does not repeat profile state.
+The first truthy `prompt || user_prompt` value remains authoritative; a selected
+non-string value is a controlled no-op. Malformed JSON retains raw-text
+fallback, and matching retains case-insensitive substring behavior. Every
+non-triggered or selected non-string input exits successfully with empty stdout
+and stderr. Hook context remains subordinate to the current user request under
+the repository authority order; the reminder cannot override an explicit scope
+decision.
+
+Infra verification executes both hook entrypoints with bounded child processes,
+checks exact JSON envelopes and context, and applies negative semantic mutants.
+The verifier owns an independent projection of the approved output; runtime
+hooks do not import their expected text from the verifier.
+
+## Native Git Hook Installer Contract
+
+The ordered contract is exactly `pre-commit -> npm run quality:fast` followed
+by `pre-push -> npm run codex:ship`. The CLI name remains `hooks:install`; the
+import-safe core lives in `scripts/lib/native-hook-installer.mjs`, so tests
+never need to import or execute the live CLI entrypoint.
+
+The installer first proves that `git rev-parse --show-toplevel` matches its
+intended repository root. Git remains the active-path authority through
+`git rev-parse --path-format=absolute --git-path hooks`; a separate lexical
+`git rev-parse --git-path hooks` probe detects redirects that Git for Windows
+may canonicalize. Default shared hooks in linked worktrees and configured
+relative or absolute `core.hooksPath` locations are supported because Git
+selected them. A lexical/active mismatch, symlink, junction, other reparse
+redirect, non-directory path, non-regular target, or multiply linked target is
+rejected before mutation.
+
+Both targets receive a complete preflight before any directory or file is
+created. Only an absent target, the exact current managed body, or the exact
+legacy body is adoptable; a marker embedded in another body is unmanaged. The
+installer stages both bodies with exclusive same-directory files, reads the
+stages back, re-resolves the active Git path, applies both targets, sets the
+executable intent, and reads both final bodies back. Success lines, including
+the actual active hooks directory, are buffered until every check passes.
+
+Handled mkdir, write, chmod, rename, and read-back failures trigger reverse
+rollback of exact prior bytes and modes plus owned temporary-directory cleanup.
+This is a handled-failure transaction, not a claim of two-file crash or
+power-loss atomicity. If rollback itself fails, the command remains failed and
+preserves any verified recovery candidate rather than deleting the last
+restorable copy. Unverified or corrupt candidates are cleanup targets and are
+never advertised as recovery paths.
+
+## Python Test Inventory Contract
+
+`scripts/run-python-tests.mjs` is the single production owner for the exact,
+ordered `test_*.py` module allowlist under `backend/tests` and
+`blender_addon/tests`. The runner recursively derives slash-normalized paths
+from directory entries, requires a nonzero inventory in each root, and compares
+the deterministic result with that allowlist before probing any Python
+interpreter or starting either suite.
+
+Missing, duplicate, renamed, case-aliased, or additive test modules fail
+closed. Missing, mis-cased, unreadable, escaped, symlinked, junction-backed, or
+non-directory roots; symlink/junction entries; non-regular allowlisted module
+paths; unsupported filesystem entry types; nested discovery package markers;
+and empty inventories are also controlled failures. The separate
+`smoke_blender_*.py` scripts belong to `test:blender` and are deliberately not
+part of this `test:backend` module contract.
+Non-`test_*.py` fixtures and the standalone `npm run test:packaging` release
+smoke are also outside the inventory; `backend/tests/test_packaging.py` remains
+an allowlisted `test:backend` module and covers different behavior.
+
+Infra verification imports the production inspector and runner without CLI
+side effects, compares their immutable contract with an independent oracle,
+and executes isolated filesystem mutants. Every allowlisted-module deletion
+must fail before any interpreter probe or unittest subprocess; additive,
+duplicate, renamed, nested, case, zero-inventory, path, type, and
+filesystem-error mutants are covered as well. The contract fixes module
+composition, not the number of test methods, passes, or skips.
 
 ## Command Groups
 
