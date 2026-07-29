@@ -31,6 +31,7 @@ import {
 import {
   main as runBlenderSmokeMain,
   parseSmokeArguments,
+  probeBlender,
   resolveBlender,
 } from './run-blender-smoke.mjs';
 import {
@@ -1238,27 +1239,270 @@ function fakeFilesystem(fakeRoot, tree, failures = {}) {
   }
   check('Blender smoke parser rejects unknown options', rejectedUnknown);
 
+  const missingInspection = probeBlender(path.join(
+    tmpdir(),
+    `blueprints-missing-blender-${process.pid}-${Date.now()}`,
+  ));
+  const deniedInspection = probeBlender('blender-denied', {
+    spawn: () => ({
+      error: Object.assign(new Error('access denied'), { code: 'EPERM' }),
+    }),
+  });
+  check(
+    'Blender production probe distinguishes ENOENT from an unlaunchable executable',
+    !missingInspection.ok
+      && missingInspection.missing === true
+      && !deniedInspection.ok
+      && deniedInspection.missing === false,
+  );
+
+  const winPath = path.win32;
+  const missingProbe = () => ({ detail: 'ENOENT', missing: true, ok: false, version: '' });
+  const directoryEntry = (name) => ({ isDirectory: () => true, name });
+
+  const autoMissingProbes = [];
   const autoMissing = resolveBlender({
     env: {},
     exists: () => false,
-    listProgramFiles: () => [],
     platform: 'win32',
-    probe: () => ({ detail: 'missing', ok: false, version: '' }),
+    probe: (candidate) => {
+      autoMissingProbes.push(candidate);
+      return missingProbe();
+    },
   });
-  check('Blender resolver distinguishes auto-missing from configured failure', autoMissing.command === null && autoMissing.error === null);
+  check(
+    'Blender resolver distinguishes true auto-missing from configured failure',
+    autoMissing.command === null
+      && autoMissing.error === null
+      && JSON.stringify(autoMissingProbes) === JSON.stringify(['blender']),
+  );
 
-  const explicitMissing = resolveBlender({ env: { BLENDER_EXE: 'C:\\missing\\blender.exe' }, exists: () => false });
+  const portableRoot = 'D:\\Portable Programs';
+  const wideRoot = 'E:\\Applications';
+  const portableDirectory = 'Blender 5.1 Portable';
+  const portableCandidate = winPath.join(
+    wideRoot,
+    'Blender Foundation',
+    portableDirectory,
+    'blender.exe',
+  );
+  const portableReads = [];
+  const portableProbes = [];
+  const portableResolution = resolveBlender({
+    env: { ProgramFiles: portableRoot, ProgramW6432: wideRoot },
+    exists: (candidate) => candidate.toLowerCase() === portableCandidate.toLowerCase(),
+    platform: 'win32',
+    probe: (candidate) => {
+      portableProbes.push(candidate);
+      return { detail: '', missing: false, ok: true, version: 'Blender 5.1.2' };
+    },
+    readDirectory: (directory) => {
+      portableReads.push(directory);
+      if (directory === winPath.join(portableRoot, 'Blender Foundation')) {
+        throw Object.assign(new Error('not installed'), { code: 'ENOENT' });
+      }
+      return [directoryEntry(portableDirectory)];
+    },
+  });
+  check(
+    'Blender resolver discovers ProgramFiles and ProgramW6432 installations on non-C drives',
+    portableResolution.command === portableCandidate
+      && portableResolution.error === null
+      && JSON.stringify(portableReads) === JSON.stringify([
+        winPath.join(portableRoot, 'Blender Foundation'),
+        winPath.join(wideRoot, 'Blender Foundation'),
+      ])
+      && JSON.stringify(portableProbes) === JSON.stringify([portableCandidate])
+      && portableProbes.every((candidate) => !/^C:\\/i.test(candidate)),
+  );
+  check(
+    'Blender resolver has no fixed C-drive Program Files fallback',
+    !/C:\\\\Program Files\\\\Blender Foundation/.test(read('scripts/run-blender-smoke.mjs')),
+  );
+
+  const duplicateRoot = 'F:\\Program Files';
+  const duplicateCandidate = winPath.join(
+    duplicateRoot,
+    'Blender Foundation',
+    'Blender 5.1',
+    'blender.exe',
+  );
+  let duplicateRootReads = 0;
+  const duplicateCandidateProbes = [];
+  const duplicateRoots = resolveBlender({
+    env: { ProgramFiles: duplicateRoot, ProgramW6432: 'f:\\PROGRAM FILES\\' },
+    exists: (candidate) => candidate.toLowerCase() === duplicateCandidate.toLowerCase(),
+    platform: 'win32',
+    probe: (candidate) => {
+      if (candidate === 'blender') return missingProbe();
+      duplicateCandidateProbes.push(candidate);
+      return { detail: 'EPERM', missing: false, ok: false, version: '' };
+    },
+    readDirectory: () => {
+      duplicateRootReads += 1;
+      return [directoryEntry('blender 5.1'), directoryEntry('BLENDER 5.1')];
+    },
+  });
+  check(
+    'Blender resolver deduplicates ProgramFiles roots and candidates case-insensitively',
+    duplicateRootReads === 1
+      && duplicateRoots.command === null
+      && /could not be launched/.test(duplicateRoots.error)
+      && JSON.stringify(duplicateCandidateProbes) === JSON.stringify([duplicateCandidate]),
+  );
+
+  const sequenceRoot = 'G:\\Blender Suite';
+  const sequenceNames = [
+    'Blender 5.1 A Missing',
+    'Blender 5.1 B Wrong',
+    'Blender 5.1 C Broken',
+    'Blender 5.1 D Valid',
+  ];
+  const sequenceCandidates = sequenceNames.map((name) => (
+    winPath.join(sequenceRoot, 'Blender Foundation', name, 'blender.exe')
+  ));
+  const sequenceProbes = [];
+  const continuedResolution = resolveBlender({
+    env: { ProgramFiles: sequenceRoot },
+    exists: (candidate) => !candidate.endsWith(`${sequenceNames[0]}\\blender.exe`)
+      && sequenceCandidates.includes(candidate),
+    platform: 'win32',
+    probe: (candidate) => {
+      sequenceProbes.push(candidate);
+      if (candidate === sequenceCandidates[1]) {
+        return { detail: '', missing: false, ok: true, version: 'Blender 4.3.0' };
+      }
+      if (candidate === sequenceCandidates[2]) {
+        return { detail: 'EPERM', missing: false, ok: false, version: '' };
+      }
+      return { detail: '', missing: false, ok: true, version: 'Blender 5.1.2' };
+    },
+    readDirectory: () => sequenceNames.map(directoryEntry),
+  });
+  check(
+    'Blender resolver continues after missing wrong-version and unlaunchable auto candidates',
+    continuedResolution.command === sequenceCandidates[3]
+      && continuedResolution.error === null
+      && JSON.stringify(sequenceProbes) === JSON.stringify(sequenceCandidates.slice(1)),
+  );
+
+  const wrongOnlyRoot = 'H:\\Wrong Blender';
+  const wrongOnlyCandidate = winPath.join(
+    wrongOnlyRoot,
+    'Blender Foundation',
+    'Blender 5.1 Wrong',
+    'blender.exe',
+  );
+  const autoWrongVersion = resolveBlender({
+    env: { ProgramFiles: wrongOnlyRoot },
+    exists: (candidate) => candidate === wrongOnlyCandidate,
+    platform: 'win32',
+    probe: (candidate) => candidate === 'blender'
+      ? missingProbe()
+      : { detail: '', missing: false, ok: true, version: 'Blender 4.3.0' },
+    readDirectory: () => [directoryEntry('Blender 5.1 Wrong')],
+  });
+  check(
+    'Blender resolver reports an exhausted wrong-version auto candidate instead of deferring',
+    autoWrongVersion.command === null && /not Blender 5\.1/.test(autoWrongVersion.error),
+  );
+
+  const brokenOnlyRoot = 'I:\\Broken Blender';
+  const brokenOnlyCandidate = winPath.join(
+    brokenOnlyRoot,
+    'Blender Foundation',
+    'Blender 5.1 Broken',
+    'blender.exe',
+  );
+  const autoUnlaunchable = resolveBlender({
+    env: { ProgramFiles: brokenOnlyRoot },
+    exists: (candidate) => candidate === brokenOnlyCandidate,
+    platform: 'win32',
+    probe: (candidate) => candidate === 'blender'
+      ? missingProbe()
+      : { detail: 'EPERM', missing: false, ok: false, version: '' },
+    readDirectory: () => [directoryEntry('Blender 5.1 Broken')],
+  });
+  check(
+    'Blender resolver reports an exhausted unlaunchable auto candidate instead of deferring',
+    autoUnlaunchable.command === null && /could not be launched/.test(autoUnlaunchable.error),
+  );
+
+  const unreadableRoot = 'J:\\Unreadable Programs';
+  const unreadableResolution = resolveBlender({
+    env: { ProgramFiles: unreadableRoot },
+    exists: () => false,
+    platform: 'win32',
+    probe: missingProbe,
+    readDirectory: () => {
+      throw Object.assign(new Error('access denied'), { code: 'EACCES' });
+    },
+  });
+  check(
+    'Blender resolver fails closed when a ProgramFiles root cannot be inspected',
+    unreadableResolution.command === null && /Could not inspect/.test(unreadableResolution.error),
+  );
+
+  const pathFallbackEvents = [];
+  const pathFallback = resolveBlender({
+    env: { ProgramFiles: 'K:\\No Blender' },
+    exists: () => false,
+    platform: 'win32',
+    probe: (candidate) => {
+      pathFallbackEvents.push(`probe:${candidate}`);
+      return { detail: '', missing: false, ok: true, version: 'Blender 5.1.2' };
+    },
+    readDirectory: () => {
+      pathFallbackEvents.push('read:ProgramFiles');
+      return [];
+    },
+  });
+  check(
+    'Blender resolver probes PATH only after ProgramFiles discovery',
+    pathFallback.command === 'blender'
+      && JSON.stringify(pathFallbackEvents) === JSON.stringify(['read:ProgramFiles', 'probe:blender']),
+  );
+
+  let explicitDiscoveryCalls = 0;
+  const explicitReadDirectory = () => {
+    explicitDiscoveryCalls += 1;
+    return [];
+  };
+  const explicitMissing = resolveBlender({
+    env: { BLENDER_EXE: 'C:\\missing\\blender.exe' },
+    exists: () => false,
+    platform: 'win32',
+    readDirectory: explicitReadDirectory,
+  });
   check('Blender resolver fails explicit missing BLENDER_EXE without fallback', explicitMissing.command === null && /does not exist/.test(explicitMissing.error));
   const explicitUnlaunchable = resolveBlender({
     env: { BLENDER_EXE: 'blender-custom' },
     probe: () => ({ detail: 'EPERM', ok: false, version: '' }),
+    readDirectory: explicitReadDirectory,
   });
   check('Blender resolver fails explicit unlaunchable BLENDER_EXE without fallback', explicitUnlaunchable.command === null && /could not be launched/.test(explicitUnlaunchable.error));
   const explicitWrongVersion = resolveBlender({
     env: { BLENDER_EXE: 'blender-custom' },
     probe: () => ({ detail: '', ok: true, version: 'Blender 4.3.0' }),
+    readDirectory: explicitReadDirectory,
   });
   check('Blender resolver fails explicit wrong-version BLENDER_EXE without fallback', explicitWrongVersion.command === null && /must be Blender 5\.1/.test(explicitWrongVersion.error));
+  const explicitValidProbes = [];
+  const explicitValid = resolveBlender({
+    env: { BLENDER_EXE: 'blender-explicit', ProgramFiles: 'L:\\Programs' },
+    probe: (candidate) => {
+      explicitValidProbes.push(candidate);
+      return { detail: '', missing: false, ok: true, version: 'Blender 5.1.2' };
+    },
+    readDirectory: explicitReadDirectory,
+  });
+  check(
+    'Blender resolver returns a valid explicit BLENDER_EXE without auto-discovery or PATH fallback',
+    explicitValid.command === 'blender-explicit'
+      && explicitValid.error === null
+      && JSON.stringify(explicitValidProbes) === JSON.stringify(['blender-explicit'])
+      && explicitDiscoveryCalls === 0,
+  );
 
   const optionalMessages = [];
   const optionalExit = runBlenderSmokeMain({
@@ -1281,6 +1525,18 @@ function fakeFilesystem(fakeRoot, tree, failures = {}) {
     logger: { error: (message) => configuredMessages.push(message), log: (message) => configuredMessages.push(message) },
   });
   check('conditional Blender never defers an explicit configuration failure', configuredExit === 1 && configuredMessages.some((message) => /^\[FAIL\]/.test(message)));
+  const autoFailureMessages = [];
+  const autoFailureExit = runBlenderSmokeMain({
+    argv: ['--if-available'],
+    blenderResolver: () => autoUnlaunchable,
+    logger: { error: (message) => autoFailureMessages.push(message), log: (message) => autoFailureMessages.push(message) },
+  });
+  check(
+    'conditional Blender never defers an auto-discovery failure',
+    autoFailureExit === 1
+      && autoFailureMessages.some((message) => /^\[FAIL\]/.test(message))
+      && autoFailureMessages.every((message) => !/^\[DEFER\]/.test(message)),
+  );
   const foundSmokeFailure = runBlenderSmokeMain({
     argv: ['--if-available'],
     blenderResolver: () => ({ command: 'blender', error: null, version: 'Blender 5.1.0' }),

@@ -96,6 +96,11 @@ The gate checks:
   backend root, and validates its three declared outputs.
 - Blender bridge smoke behavior through `npm run test:blender` when Blender 5.1
   is available locally or `BLENDER_EXE` points to Blender 5.1.
+- Windows Blender discovery uses `ProgramFiles` and `ProgramW6432`, deduplicates
+  roots and candidates case-insensitively, supports non-`C:` installations, and
+  probes the PATH fallback last. Resolver fixtures run with host-independent
+  Win32 paths on both CI operating systems and cover missing, wrong-version,
+  unlaunchable, unreadable-root, later-valid, and explicit-priority behavior.
 - The Blender 5.1 smoke includes both source and installed-package cases. Its
   blank-configuration case enables the real installed add-on with default
   preferences and requires `backend_not_configured`, `CANCELLED`, and zero
@@ -109,8 +114,10 @@ The gate checks:
 `test:blender` command loads Blender 5.1 in background mode for bridge
 changes. `test:blender -- --if-available` is reserved for PostToolUse and emits
 `[DEFER]` with exit 0 only when `BLENDER_EXE` is unset and Blender 5.1 cannot be
-auto-discovered. An explicit missing, unlaunchable, or wrong-version executable
-always fails. `test:packaging` packages the add-on and backend only inside a
-temporary directory and does not commit generated artifacts. The gates do not
+auto-discovered because every candidate is genuinely absent. Auto-discovery
+failures do not defer, and a later valid candidate may recover an earlier local
+failure. An explicit missing, unlaunchable, or wrong-version executable always
+fails without fallback. `test:packaging` packages the add-on and backend only
+inside a temporary directory and does not commit generated artifacts. The gates do not
 run a browser, compile an executable, build installers, invoke
 FreeCAD/TechDraw, or generate committed product artifacts.

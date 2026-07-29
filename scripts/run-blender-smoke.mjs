@@ -248,15 +248,20 @@ export function resolveBlender({
   platform = process.platform,
   exists = existsSync,
   probe = probeBlender,
-  listProgramFiles = programFilesBlender51,
+  readDirectory = readdirSync,
 } = {}) {
   const configured = typeof env.BLENDER_EXE === 'string' ? env.BLENDER_EXE.trim() : '';
   if (configured) {
-    const candidate = normalizeBlenderCandidate(configured, exists);
+    const candidate = normalizeBlenderCandidate(configured, exists, platform);
     if (!candidate) {
       return { command: null, error: `Configured BLENDER_EXE does not exist: ${configured}`, version: '' };
     }
-    const inspected = probe(candidate);
+    let inspected;
+    try {
+      inspected = probe(candidate);
+    } catch (error) {
+      return { command: null, error: `Configured BLENDER_EXE could not be launched: ${error.message || String(error)}`, version: '' };
+    }
     if (!inspected.ok) {
       return { command: null, error: `Configured BLENDER_EXE could not be launched: ${inspected.detail}`, version: '' };
     }
@@ -267,22 +272,41 @@ export function resolveBlender({
   }
 
   const candidates = [];
+  const discoveryErrors = [];
   if (platform === 'win32') {
-    candidates.push(
-      'C:\\Program Files\\Blender Foundation\\Blender 5.1\\blender.exe',
-      'C:\\Program Files\\Blender Foundation\\Blender-5.1-DLSS-Package\\blender.exe',
-    );
-    candidates.push(...listProgramFiles());
+    const programFiles = programFilesBlender51({ env, readDirectory });
+    candidates.push(...programFiles.candidates);
+    discoveryErrors.push(...programFiles.errors);
   }
   candidates.push('blender');
 
-  for (const rawCandidate of unique(candidates)) {
-    const candidate = normalizeBlenderCandidate(rawCandidate, exists);
+  for (const rawCandidate of unique(candidates, { caseInsensitive: platform === 'win32' })) {
+    const candidate = normalizeBlenderCandidate(rawCandidate, exists, platform);
     if (!candidate) continue;
-    const inspected = probe(candidate);
-    if (inspected.ok && /\bBlender 5\.1\b/.test(inspected.version)) {
+    let inspected;
+    try {
+      inspected = probe(candidate);
+    } catch (error) {
+      discoveryErrors.push(`${candidate} could not be launched: ${error.message || String(error)}`);
+      continue;
+    }
+    if (!inspected.ok) {
+      if (!inspected.missing) {
+        discoveryErrors.push(`${candidate} could not be launched: ${inspected.detail || 'unknown launch failure'}`);
+      }
+      continue;
+    }
+    if (/\bBlender 5\.1\b/.test(inspected.version)) {
       return { command: candidate, error: null, version: inspected.version };
     }
+    discoveryErrors.push(`${candidate} is not Blender 5.1: ${firstLine(inspected.version)}`);
+  }
+  if (discoveryErrors.length > 0) {
+    return {
+      command: null,
+      error: `Automatic Blender 5.1 discovery failed: ${discoveryErrors.join('; ')}`,
+      version: '',
+    };
   }
   return { command: null, error: null, version: '' };
 }
@@ -291,36 +315,80 @@ function isPathLikeBlenderCandidate(candidate) {
   return candidate.includes('\\') || candidate.includes('/') || /^[A-Za-z]:/.test(candidate);
 }
 
-function programFilesBlender51() {
-  const rootDir = 'C:\\Program Files\\Blender Foundation';
-  try {
-    return readdirSync(rootDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && /5\.1/i.test(entry.name))
-      .map((entry) => path.join(rootDir, entry.name, 'blender.exe'));
-  } catch {
-    return [];
+function programFilesBlender51({ env, readDirectory }) {
+  const winPath = path.win32;
+  const errors = [];
+  const roots = [];
+  for (const [name, rawRoot] of [
+    ['ProgramFiles', env.ProgramFiles],
+    ['ProgramW6432', env.ProgramW6432],
+  ]) {
+    if (typeof rawRoot !== 'string' || rawRoot.trim() === '') continue;
+    let rootDir = winPath.normalize(rawRoot.trim());
+    if (!winPath.isAbsolute(rootDir)) {
+      errors.push(`${name} is not an absolute Windows path: ${rawRoot}`);
+      continue;
+    }
+    if (rootDir.length > winPath.parse(rootDir).root.length) {
+      rootDir = rootDir.replace(/[\\/]+$/, '');
+    }
+    roots.push(rootDir);
   }
+
+  const candidates = [];
+  for (const programFilesRoot of unique(roots, { caseInsensitive: true })) {
+    const blenderRoot = winPath.join(programFilesRoot, 'Blender Foundation');
+    candidates.push(
+      winPath.join(blenderRoot, 'Blender 5.1', 'blender.exe'),
+      winPath.join(blenderRoot, 'Blender-5.1-DLSS-Package', 'blender.exe'),
+    );
+    try {
+      const discoveredDirectories = readDirectory(blenderRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && /5\.1/i.test(entry.name))
+        .map((entry) => entry.name)
+        .sort();
+      candidates.push(...discoveredDirectories.map((directory) => (
+        winPath.join(blenderRoot, directory, 'blender.exe')
+      )));
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        errors.push(`Could not inspect ${blenderRoot}: ${error.message || String(error)}`);
+      }
+    }
+  }
+  return {
+    candidates: unique(candidates, { caseInsensitive: true }),
+    errors,
+  };
 }
 
-function normalizeBlenderCandidate(rawCandidate, exists) {
+function normalizeBlenderCandidate(rawCandidate, exists, platform) {
   const isPath = isPathLikeBlenderCandidate(rawCandidate);
-  const candidate = isPath ? path.resolve(root, rawCandidate) : rawCandidate;
+  const pathApi = platform === 'win32' ? path.win32 : path;
+  const candidate = isPath ? pathApi.resolve(root, rawCandidate) : rawCandidate;
   if (isPath && !exists(candidate)) return null;
   return candidate;
 }
 
-export function probeBlender(executable) {
-  const result = spawnSync(executable, ['--version'], {
+export function probeBlender(executable, { spawn = spawnSync } = {}) {
+  const result = spawn(executable, ['--version'], {
     encoding: 'utf8',
     timeout: 30_000,
     windowsHide: true,
   });
-  if (result.error) return { detail: result.error.message, ok: false, version: '' };
-  if (result.signal) return { detail: `terminated by ${result.signal}`, ok: false, version: '' };
-  if (result.status !== 0) {
-    return { detail: `exited with status ${result.status ?? '<none>'}`, ok: false, version: '' };
+  if (result.error) {
+    return {
+      detail: result.error.message,
+      missing: result.error.code === 'ENOENT',
+      ok: false,
+      version: '',
+    };
   }
-  return { detail: '', ok: true, version: `${result.stdout || ''}${result.stderr || ''}` };
+  if (result.signal) return { detail: `terminated by ${result.signal}`, missing: false, ok: false, version: '' };
+  if (result.status !== 0) {
+    return { detail: `exited with status ${result.status ?? '<none>'}`, missing: false, ok: false, version: '' };
+  }
+  return { detail: '', missing: false, ok: true, version: `${result.stdout || ''}${result.stderr || ''}` };
 }
 
 function resolvePython() {
@@ -388,8 +456,15 @@ function firstLine(value) {
   return String(value).split(/\r?\n/)[0] || '<empty>';
 }
 
-function unique(values) {
-  return [...new Set(values.filter(Boolean))];
+function unique(values, { caseInsensitive = false } = {}) {
+  const seen = new Set();
+  return values.filter((value) => {
+    if (!value) return false;
+    const key = caseInsensitive ? value.toLowerCase() : value;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function cleanupPythonCaches() {
