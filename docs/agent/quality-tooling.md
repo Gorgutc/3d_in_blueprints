@@ -17,8 +17,10 @@ contracts without making Node part of the product runtime.
   Dimensions v1, Standards DB v1, Image Assist v1, release packaging behavior,
   and bridge unit tests.
 - `scripts/run-blender-smoke.mjs`: resolves Blender 5.1 and runs full source plus
-  installed two-ZIP bridge smoke in background mode. Normal invocation is
-  strict; `--if-available` is the conditional PostToolUse mode.
+  installed two-ZIP bridge smoke in background mode. On Windows it discovers
+  candidates from `ProgramFiles` and `ProgramW6432`, including non-`C:` roots,
+  before the PATH fallback. Normal invocation is strict; `--if-available` is
+  the conditional PostToolUse mode.
 - `scripts/package_release.py`: creates version-stamped add-on and backend zip
   artifacts plus a release manifest using Python stdlib only.
 - `scripts/run-packaging-smoke.mjs`: resolves Python and runs packaging into a
@@ -128,7 +130,9 @@ composition, not the number of test methods, passes, or skips.
   v1, Standards DB v1, Image Assist v1, release packaging behavior, and bridge
   unit behavior.
 - `test:blender`: strict Blender 5.1 source plus installed-package smoke;
-  `--if-available` may defer only auto-missing Blender in PostToolUse.
+  `--if-available` may defer only when every auto-discovery route is genuinely
+  missing. Wrong-version, unlaunchable, or unreadable auto-discovery results
+  remain failures unless a later valid Blender 5.1 candidate succeeds.
 - `test:packaging`: stdlib packaging smoke that writes generated release
   artifacts only to a temporary directory.
 - `quality:deep`: `quality:fast` plus backend, bridge unit, and packaging
