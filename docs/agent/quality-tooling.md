@@ -16,6 +16,9 @@ contracts without making Node part of the product runtime.
   the two stdlib `unittest` discovery suites for backend, GOST composer,
   Dimensions v1, Standards DB v1, Image Assist v1, release packaging behavior,
   and bridge unit tests.
+- `scripts/lib/python-resolver.mjs`: import-safe owner for bounded Python
+  interpreter launchability discovery shared by the backend-test, packaging,
+  and Blender-smoke runners.
 - `scripts/run-blender-smoke.mjs`: resolves Blender 5.1 and runs full source plus
   installed two-ZIP bridge smoke in background mode. On Windows it discovers
   candidates from `ProgramFiles` and `ProgramW6432`, including non-`C:` roots,
@@ -122,6 +125,27 @@ must fail before any interpreter probe or unittest subprocess; additive,
 duplicate, renamed, nested, case, zero-inventory, path, type, and
 filesystem-error mutants are covered as well. The contract fixes module
 composition, not the number of test methods, passes, or skips.
+
+## Python Interpreter Discovery Contract
+
+Exactly three runners use `scripts/lib/python-resolver.mjs` to find a
+launchable interpreter: `run-python-tests.mjs`, `run-packaging-smoke.mjs`, and
+`run-blender-smoke.mjs`. Candidate order remains a truthy raw `PYTHON` value,
+`python3`, `python`, `py -3`, and then the existing bundled Codex runtime under
+`USERPROFILE || HOME`. An invalid explicit `PYTHON` value falls through to the
+next candidate; it is not a strict override.
+
+Every `--version` probe is a direct no-shell process with a 30-second timeout.
+A thrown spawn, process error or timeout, signal, missing status, or nonzero
+status rejects only that candidate and continues discovery. The first clean
+status `0` wins, including arbitrary or empty version output. This bounded
+slice verifies launchability only: it does not declare a supported Python
+version, parse version output, add a capability requirement, or change the
+timeouts of the actual unittest and packaging commands.
+
+The resolver remains Node verification infrastructure, not product runtime.
+Its path is Blender-sensitive for PostToolUse because it also selects the
+interpreter used to build the isolated two-ZIP Blender smoke artifacts.
 
 ## Command Groups
 

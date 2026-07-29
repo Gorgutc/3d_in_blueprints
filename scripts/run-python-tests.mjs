@@ -1,7 +1,8 @@
-import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePython } from './lib/python-resolver.mjs';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const scriptDir = path.dirname(scriptPath);
@@ -204,9 +205,7 @@ export function main({
     return 1;
   }
 
-  const selected = pythonCandidates(env).find((candidate) => (
-    canRunPython(candidate, { cwd: root, spawn })
-  ));
+  const selected = resolvePython({ env, root, spawn });
   if (!selected) {
     logger.error('[FAIL] Python interpreter not found. Set PYTHON or install python3/python.');
     return 1;
@@ -323,49 +322,6 @@ function normalizedContractEntries(values, label, fail) {
     }
     return normalized;
   });
-}
-
-function pythonCandidates(env) {
-  return [
-    fromEnv(env),
-    { command: 'python3', args: [] },
-    { command: 'python', args: [] },
-    { command: 'py', args: ['-3'] },
-    bundledCodexPython(env),
-  ].filter(Boolean);
-}
-
-function fromEnv(env) {
-  const command = env.PYTHON;
-  return command ? { command, args: [] } : null;
-}
-
-function bundledCodexPython(env) {
-  const home = env.USERPROFILE || env.HOME;
-  if (!home) return null;
-  const executable = path.join(
-    home,
-    '.cache',
-    'codex-runtimes',
-    'codex-primary-runtime',
-    'dependencies',
-    'python',
-    process.platform === 'win32' ? 'python.exe' : 'bin/python'
-  );
-  return existsSync(executable) ? { command: executable, args: [] } : null;
-}
-
-function canRunPython(candidate, { cwd, spawn }) {
-  try {
-    const result = spawn(candidate.command, [...candidate.args, '--version'], {
-      cwd,
-      encoding: 'utf8',
-      windowsHide: true,
-    });
-    return result?.status === 0;
-  } catch {
-    return false;
-  }
 }
 
 function prependPaths(entries, existing) {
