@@ -523,8 +523,9 @@ function nativeInstallerFs(overrides = {}) {
 }
 
 function createIsolatedFixtureGitContext(container, baseEnv = process.env) {
-  const globalConfig = path.join(container, 'isolated-global.gitconfig');
-  const templateDir = path.join(container, 'isolated-template');
+  const canonicalContainer = canonicalFixturePath(container);
+  const globalConfig = path.join(canonicalContainer, 'isolated-global.gitconfig');
+  const templateDir = path.join(canonicalContainer, 'isolated-template');
   writeFileSync(globalConfig, '', { encoding: 'utf8', flag: 'wx' });
   mkdirSync(templateDir);
 
@@ -568,20 +569,59 @@ function createIsolatedFixtureGitContext(container, baseEnv = process.env) {
   env.GIT_TEMPLATE_DIR = templateDir;
   env.GIT_TERMINAL_PROMPT = '0';
   return Object.freeze({
-    container: path.resolve(container),
+    container: canonicalContainer,
     env: Object.freeze(env),
   });
 }
 
+function canonicalFixturePath(candidate, {
+  pathApi = path,
+  realpathNative = realpathSync.native,
+} = {}) {
+  if (typeof candidate !== 'string' || candidate.length === 0) {
+    throw new TypeError('fixture path must be a non-empty string');
+  }
+
+  let existingAncestor = pathApi.resolve(candidate);
+  const missingTail = [];
+  while (true) {
+    try {
+      const canonicalAncestor = pathApi.resolve(realpathNative(existingAncestor));
+      return missingTail.length === 0
+        ? canonicalAncestor
+        : pathApi.join(canonicalAncestor, ...missingTail);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      const parent = pathApi.dirname(existingAncestor);
+      if (parent === existingAncestor) throw error;
+      missingTail.unshift(pathApi.basename(existingAncestor));
+      existingAncestor = parent;
+    }
+  }
+}
+
+function fixturePathIsConfined(container, candidate, canonicalOptions = {}) {
+  const pathApi = canonicalOptions.pathApi ?? path;
+  const canonicalContainer = canonicalFixturePath(container, canonicalOptions);
+  const canonicalCandidate = canonicalFixturePath(candidate, canonicalOptions);
+  const relative = pathApi.relative(canonicalContainer, canonicalCandidate);
+  return relative === ''
+    || (
+      relative !== '..'
+      && !relative.startsWith(`..${pathApi.sep}`)
+      && !pathApi.isAbsolute(relative)
+    );
+}
+
 function fixtureContextForPath(candidate) {
   if (typeof candidate !== 'string' || candidate.length === 0) return null;
-  const resolved = path.resolve(candidate);
+  const resolved = canonicalFixturePath(candidate);
   let selected = null;
   for (const context of nativeHookFixtureContexts.values()) {
-    const relative = path.relative(context.container, resolved);
-    const confined = relative === ''
-      || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
-    if (confined && (!selected || context.container.length > selected.container.length)) {
+    if (
+      fixturePathIsConfined(context.container, resolved)
+      && (!selected || context.container.length > selected.container.length)
+    ) {
       selected = context;
     }
   }
@@ -601,15 +641,10 @@ function normalizedGitFixturePath(rawValue) {
 
 function assertFixtureHooksPathConfined(context, rawPath) {
   const candidate = normalizedGitFixturePath(rawPath);
-  const relative = path.relative(context.container, candidate);
-  if (
-    relative === '..'
-    || relative.startsWith(`..${path.sep}`)
-    || path.isAbsolute(relative)
-  ) {
+  if (!fixturePathIsConfined(context.container, candidate)) {
     throw new Error(`fixture Git hooks path escaped its container: ${candidate}`);
   }
-  return candidate;
+  return canonicalFixturePath(candidate);
 }
 
 function nativeHookFixtureSpawn(rootPath) {
@@ -654,7 +689,10 @@ function installNativeHooksMain(options = {}) {
 }
 
 function createNativeHookFixture(label, { baseEnvFactory = null } = {}) {
-  const container = mkdtempSync(path.join(tmpdir(), 'blueprints-native-hooks-'));
+  const canonicalTempRoot = canonicalFixturePath(tmpdir());
+  const container = canonicalFixturePath(
+    mkdtempSync(path.join(canonicalTempRoot, 'blueprints-native-hooks-')),
+  );
   try {
     const baseEnv = baseEnvFactory ? baseEnvFactory(container) : process.env;
     const context = createIsolatedFixtureGitContext(container, baseEnv);
@@ -702,8 +740,8 @@ function runFixtureGit(cwd, args) {
 }
 
 function cleanupNativeHookFixture(container) {
-  const resolvedTemp = path.resolve(tmpdir());
-  const resolvedContainer = path.resolve(container);
+  const resolvedTemp = canonicalFixturePath(tmpdir());
+  const resolvedContainer = canonicalFixturePath(container);
   const relative = path.relative(resolvedTemp, resolvedContainer);
   if (
     relative === ''
@@ -747,7 +785,7 @@ function errorDetailForCheck(error) {
 
 function sameFixturePath(left, right) {
   const normalize = (value) => {
-    const resolved = path.resolve(value);
+    const resolved = canonicalFixturePath(value);
     return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
   };
   return normalize(left) === normalize(right);
@@ -2227,6 +2265,85 @@ if (exists('.gitignore')) {
 }
 
 if (exists('scripts/install-hooks.mjs')) {
+  {
+    const winPath = path.win32;
+    const aliasContainer = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\blueprints-native-hooks-alias';
+    const longContainer = 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blueprints-native-hooks-alias';
+    const aliasOptions = {
+      pathApi: winPath,
+      realpathNative(candidate) {
+        const resolved = winPath.resolve(candidate);
+        if (resolved === winPath.resolve(aliasContainer)) return longContainer;
+        if (resolved === winPath.resolve(longContainer)) return longContainer;
+        throw Object.assign(new Error(`missing fixture path: ${resolved}`), { code: 'ENOENT' });
+      },
+    };
+    const aliasMissingTail = winPath.join(aliasContainer, 'repo', '.git', 'hooks');
+    const longMissingTail = winPath.join(longContainer, 'repo', '.git', 'hooks');
+    check(
+      'native Git hook fixture canonicalizes Windows 8.3 aliases with a missing tail',
+      canonicalFixturePath(aliasMissingTail, aliasOptions) === longMissingTail
+        && fixturePathIsConfined(aliasContainer, longMissingTail, aliasOptions),
+    );
+
+    let deniedError = null;
+    try {
+      canonicalFixturePath(aliasMissingTail, {
+        pathApi: winPath,
+        realpathNative() {
+          throw Object.assign(new Error('access denied'), { code: 'EACCES' });
+        },
+      });
+    } catch (error) {
+      deniedError = error;
+    }
+    check(
+      'native Git hook fixture canonicalization fails closed outside ENOENT',
+      deniedError?.code === 'EACCES',
+    );
+  }
+
+  {
+    const canonicalTempRoot = canonicalFixturePath(tmpdir());
+    let confinedContainer = null;
+    let externalContainer = null;
+    try {
+      confinedContainer = canonicalFixturePath(
+        mkdtempSync(path.join(canonicalTempRoot, 'blueprints-native-hooks-confined-')),
+      );
+      externalContainer = canonicalFixturePath(
+        mkdtempSync(path.join(canonicalTempRoot, 'blueprints-native-hooks-external-')),
+      );
+      const externalExisting = path.join(externalContainer, 'hooks');
+      const externalMissingTail = path.join(externalContainer, 'missing', 'hooks');
+      mkdirSync(externalExisting);
+      const context = { container: confinedContainer };
+      const rejects = [externalExisting, externalMissingTail].map((candidate) => {
+        try {
+          assertFixtureHooksPathConfined(context, `${candidate}\n`);
+          return false;
+        } catch (error) {
+          return /escaped its container/.test(error.message);
+        }
+      });
+      check(
+        'native Git hook fixture rejects real existing and missing-tail external escapes',
+        rejects.every(Boolean),
+      );
+    } catch (error) {
+      check('native Git hook external-escape regression completes', false, errorDetailForCheck(error));
+    } finally {
+      for (const container of [externalContainer, confinedContainer]) {
+        if (!container) continue;
+        try {
+          cleanupNativeHookFixture(container);
+        } catch (error) {
+          check('native Git hook external-escape regression cleanup', false, errorDetailForCheck(error));
+        }
+      }
+    }
+  }
+
   const errors = nativeHookContractErrors(NATIVE_HOOKS);
   check('native Git hook installer has the exact pre-commit and pre-push contract', errors.length === 0, errors.join('; '));
   for (const [name, mutant] of [

@@ -36,7 +36,8 @@ The gate checks:
   and absolute `core.hooksPath`, exact managed and legacy ownership, full
   two-target preflight, parent/non-repository rejection, non-regular, hardlink,
   symlink/junction/reparse guards, hermetic system/global/env/template Git
-  configuration, confined active paths, and live-hook before/after sentinels;
+  configuration, canonical long/8.3-equivalent confined active paths, real
+  external-escape rejection, and live-hook before/after sentinels;
 - native-hook process and transaction failures, including spawn, timeout,
   signal, status, stderr/path ambiguity, mkdir, staged write, chmod,
   second-target rename, final read-back, active-path change, exact rollback,
