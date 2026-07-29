@@ -61,6 +61,13 @@ The gate checks:
   marker, path-contract, missing/unreadable root, symlink/junction, wrong-type,
   unsupported entry, import-side-effect, no-spawn-on-failure, and two-suite
   order cases;
+- shared bounded Python interpreter discovery for exactly three runners,
+  including independent candidate-order and `py -3` assertions, Win32/POSIX
+  bundled paths, raw `PYTHON` fallback semantics, first-success short circuit,
+  no-shell timeout options, import safety, single-owner topology, and
+  throw/error/timeout/signal/missing-status/nonzero exhaustion. Status `0`
+  remains output-agnostic; supported-version and capability policy are not
+  asserted by this slice;
 - append-only historical handoff log presence.
 - backend CLI, DrawingIR, SVG, and diagnostics behavior covered by Python
   stdlib `unittest` tests.

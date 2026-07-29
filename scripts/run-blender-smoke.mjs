@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePython } from './lib/python-resolver.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, '..');
@@ -127,28 +128,7 @@ function createPackagedLayout(tempRoot) {
 }
 
 function buildRelease(outputDir) {
-  const python = resolvePython();
-  if (!python) {
-    console.error('[FAIL] Python interpreter not found. Set PYTHON or install python3/python.');
-    return null;
-  }
-
-  const built = runCommand(python.command, [
-    ...python.args,
-    packageScript,
-    '--output-dir',
-    outputDir,
-    '--commit',
-    'BLENDER-PACKAGED-SMOKE',
-  ], {
-    cwd: root,
-    env: {
-      ...process.env,
-      PYTHONDONTWRITEBYTECODE: '1',
-    },
-    label: 'release artifact build for Blender smoke',
-    timeoutMs: packageTimeoutMs,
-  });
+  const built = runReleaseArtifactBuild(outputDir);
   if (!built) return null;
 
   const manifestPath = path.join(outputDir, 'release_manifest.json');
@@ -164,6 +144,36 @@ function buildRelease(outputDir) {
   const backendZip = artifactPath(outputDir, manifest, 'backend_bundle_zip');
   if (!addonZip || !backendZip) return null;
   return { addonZip, backendZip };
+}
+
+export function runReleaseArtifactBuild(outputDir, {
+  commandRunner = runCommand,
+  env = process.env,
+  logger = console,
+  pythonResolver = resolvePython,
+} = {}) {
+  const python = pythonResolver({ env, root });
+  if (!python) {
+    logger.error('[FAIL] Python interpreter not found. Set PYTHON or install python3/python.');
+    return false;
+  }
+
+  return commandRunner(python.command, [
+    ...python.args,
+    packageScript,
+    '--output-dir',
+    outputDir,
+    '--commit',
+    'BLENDER-PACKAGED-SMOKE',
+  ], {
+    cwd: root,
+    env: {
+      ...env,
+      PYTHONDONTWRITEBYTECODE: '1',
+    },
+    label: 'release artifact build for Blender smoke',
+    timeoutMs: packageTimeoutMs,
+  });
 }
 
 function artifactPath(outputDir, manifest, artifactId) {
@@ -389,47 +399,6 @@ export function probeBlender(executable, { spawn = spawnSync } = {}) {
     return { detail: `exited with status ${result.status ?? '<none>'}`, missing: false, ok: false, version: '' };
   }
   return { detail: '', missing: false, ok: true, version: `${result.stdout || ''}${result.stderr || ''}` };
-}
-
-function resolvePython() {
-  const candidates = [
-    fromPythonEnv(),
-    { command: 'python3', args: [] },
-    { command: 'python', args: [] },
-    { command: 'py', args: ['-3'] },
-    bundledCodexPython(),
-  ].filter(Boolean);
-  return candidates.find((candidate) => canRunPython(candidate)) || null;
-}
-
-function fromPythonEnv() {
-  const command = process.env.PYTHON;
-  return command ? { command, args: [] } : null;
-}
-
-function bundledCodexPython() {
-  const home = process.env.USERPROFILE || process.env.HOME;
-  if (!home) return null;
-  const executable = path.join(
-    home,
-    '.cache',
-    'codex-runtimes',
-    'codex-primary-runtime',
-    'dependencies',
-    'python',
-    process.platform === 'win32' ? 'python.exe' : 'bin/python',
-  );
-  return existsSync(executable) ? { command: executable, args: [] } : null;
-}
-
-function canRunPython(candidate) {
-  const result = spawnSync(candidate.command, [...candidate.args, '--version'], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 30_000,
-    windowsHide: true,
-  });
-  return result.status === 0;
 }
 
 function removeTempRoot(tempRoot) {

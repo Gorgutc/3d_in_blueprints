@@ -1,68 +1,51 @@
-import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePython } from './lib/python-resolver.mjs';
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(scriptDir, '..');
-const packageScript = path.join(root, 'scripts', 'package_release.py');
+const scriptPath = fileURLToPath(import.meta.url);
+const scriptDir = path.dirname(scriptPath);
+const repositoryRoot = path.resolve(scriptDir, '..');
 
-const candidates = [
-  fromEnv(),
-  { command: 'python3', args: [] },
-  { command: 'python', args: [] },
-  { command: 'py', args: ['-3'] },
-  bundledCodexPython(),
-].filter(Boolean);
+export function main({
+  env = process.env,
+  logger = console,
+  pythonResolver = resolvePython,
+  root = repositoryRoot,
+  spawn = spawnSync,
+} = {}) {
+  const selected = pythonResolver({ env, root, spawn });
+  if (!selected) {
+    logger.error('[FAIL] Python interpreter not found. Set PYTHON or install python3/python.');
+    return 1;
+  }
 
-const selected = candidates.find((candidate) => canRunPython(candidate));
-
-if (!selected) {
-  console.error('[FAIL] Python interpreter not found. Set PYTHON or install python3/python.');
-  process.exit(1);
-}
-
-const result = spawnSync(selected.command, [
-  ...selected.args,
-  packageScript,
-  '--smoke',
-], {
-  cwd: root,
-  env: {
-    ...process.env,
-    PYTHONDONTWRITEBYTECODE: '1',
-  },
-  stdio: 'inherit',
-  windowsHide: true,
-});
-
-process.exitCode = result.status === 0 ? 0 : 1;
-
-function fromEnv() {
-  const command = process.env.PYTHON;
-  return command ? { command, args: [] } : null;
-}
-
-function bundledCodexPython() {
-  const home = process.env.USERPROFILE || process.env.HOME;
-  if (!home) return null;
-  const executable = path.join(
-    home,
-    '.cache',
-    'codex-runtimes',
-    'codex-primary-runtime',
-    'dependencies',
-    'python',
-    process.platform === 'win32' ? 'python.exe' : 'bin/python'
-  );
-  return existsSync(executable) ? { command: executable, args: [] } : null;
-}
-
-function canRunPython(candidate) {
-  const result = spawnSync(candidate.command, [...candidate.args, '--version'], {
+  const packageScript = path.join(root, 'scripts', 'package_release.py');
+  const result = spawn(selected.command, [
+    ...selected.args,
+    packageScript,
+    '--smoke',
+  ], {
     cwd: root,
-    encoding: 'utf8',
+    env: {
+      ...env,
+      PYTHONDONTWRITEBYTECODE: '1',
+    },
+    stdio: 'inherit',
     windowsHide: true,
   });
-  return result.status === 0;
+
+  return result?.status === 0 ? 0 : 1;
+}
+
+if (sameFilesystemPath(process.argv[1] || '', scriptPath)) {
+  process.exitCode = main();
+}
+
+function sameFilesystemPath(left, right) {
+  const resolvedLeft = path.resolve(left);
+  const resolvedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
+    : resolvedLeft === resolvedRight;
 }

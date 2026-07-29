@@ -35,6 +35,7 @@ const BLENDER_FILES = new Set([
   'blender_addon/tests/smoke_blender_bridge.py',
   'blender_addon/tests/smoke_blender_packaged.py',
   'scripts/package_release.py',
+  'scripts/lib/python-resolver.mjs',
   'scripts/run-blender-smoke.mjs',
 ]);
 const PATH_KEYS = new Set(['file_path', 'path']);

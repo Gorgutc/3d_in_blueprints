@@ -28,11 +28,13 @@ import {
   executeVerificationPlan,
   planPostToolVerification,
 } from './lib/post-tool-routing.mjs';
+import { resolvePython } from './lib/python-resolver.mjs';
 import {
   main as runBlenderSmokeMain,
   parseSmokeArguments,
   probeBlender,
   resolveBlender,
+  runReleaseArtifactBuild,
 } from './run-blender-smoke.mjs';
 import {
   NATIVE_HOOKS,
@@ -48,6 +50,7 @@ import {
   inspectPythonTestInventory,
   main as runPythonTestsMain,
 } from './run-python-tests.mjs';
+import { main as runPackagingSmokeMain } from './run-packaging-smoke.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, '..');
@@ -95,6 +98,7 @@ const requiredFiles = [
   'scripts/lib/js-syntax-checker.mjs',
   'scripts/lib/native-hook-installer.mjs',
   'scripts/lib/post-tool-routing.mjs',
+  'scripts/lib/python-resolver.mjs',
   'scripts/verify-codex-infra.mjs',
   'scripts/run-python-tests.mjs',
   'scripts/run-blender-smoke.mjs',
@@ -2096,6 +2100,437 @@ if (exists('package.json')) {
   }
 }
 
+if (exists('scripts/lib/python-resolver.mjs')) {
+  const resolverRelativePath = 'scripts/lib/python-resolver.mjs';
+  const resolverBody = read(resolverRelativePath);
+  const runtimeConsumers = [
+    'scripts/run-blender-smoke.mjs',
+    'scripts/run-packaging-smoke.mjs',
+    'scripts/run-python-tests.mjs',
+  ];
+  const resolverExports = [...resolverBody.matchAll(
+    /^export\s+(?:async\s+)?(?:class|const|function|let|var)\s+([A-Za-z_$][\w$]*)/gm,
+  )].map((match) => match[1]);
+  const liveJavaScript = collectJavaScriptFiles({ root });
+  const runtimeResolverImporters = liveJavaScript.files
+    .filter((relativePath) => relativePath !== 'scripts/verify-codex-infra.mjs')
+    .filter((relativePath) => /from\s+['"][^'"]*python-resolver\.mjs['"]/.test(read(relativePath)))
+    .sort();
+  const localResolverPattern = /function\s+(?:bundledCodexPython|canRunPython|fromEnv|fromPythonEnv|pythonCandidates|resolvePython)\s*\(/;
+
+  check(
+    'shared Python resolver exposes one narrow production API',
+    JSON.stringify(resolverExports) === JSON.stringify(['resolvePython']),
+    resolverExports.join(', '),
+  );
+  check(
+    'exactly three runtime runners import the shared Python resolver',
+    JSON.stringify(runtimeResolverImporters) === JSON.stringify(runtimeConsumers),
+    runtimeResolverImporters.join(', '),
+  );
+  check(
+    'Python runners contain no residual local resolver clones',
+    runtimeConsumers.every((relativePath) => {
+      const body = read(relativePath);
+      return !localResolverPattern.test(body)
+        && !/codex-runtimes/.test(body);
+    }),
+  );
+  check(
+    'all three Python runners wire the shared resolver through their exact production seam',
+    /resolvePython\(\{\s*env,\s*root,\s*spawn\s*\}\)/.test(read('scripts/run-python-tests.mjs'))
+      && /pythonResolver\s*=\s*resolvePython/.test(read('scripts/run-packaging-smoke.mjs'))
+      && /pythonResolver\(\{\s*env,\s*root,\s*spawn\s*\}\)/.test(read('scripts/run-packaging-smoke.mjs'))
+      && /pythonResolver\s*=\s*resolvePython/.test(read('scripts/run-blender-smoke.mjs'))
+      && /pythonResolver\(\{\s*env,\s*root\s*\}\)/.test(read('scripts/run-blender-smoke.mjs')),
+  );
+  check(
+    'all three Python resolver consumers preserve selected launcher arguments at the task boundary',
+    /spawn\(selected\.command,\s*\[\s*\.\.\.selected\.args,\s*'-m'/.test(read('scripts/run-python-tests.mjs'))
+      && /spawn\(selected\.command,\s*\[\s*\.\.\.selected\.args,\s*packageScript,\s*'--smoke'/.test(read('scripts/run-packaging-smoke.mjs'))
+      && /commandRunner\(python\.command,\s*\[\s*\.\.\.python\.args,\s*packageScript,\s*'--output-dir'/.test(read('scripts/run-blender-smoke.mjs')),
+  );
+
+  const resolverImportProbe = spawnSync(process.execPath, [
+    '--input-type=module',
+    '--eval',
+    'await import(' + JSON.stringify(pathToFileURL(path.join(root, resolverRelativePath)).href) + ')',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 30_000,
+    windowsHide: true,
+  });
+  check(
+    'shared Python resolver import is side-effect free',
+    resolverImportProbe.status === 0
+      && resolverImportProbe.stdout === ''
+      && resolverImportProbe.stderr === '',
+    [
+      'status=' + String(resolverImportProbe.status),
+      'signal=' + String(resolverImportProbe.signal),
+      'error=' + (resolverImportProbe.error ? errorDetailForCheck(resolverImportProbe.error) : '<none>'),
+      'stdout=' + JSON.stringify(resolverImportProbe.stdout),
+      'stderr=' + JSON.stringify(resolverImportProbe.stderr),
+    ].join('; '),
+  );
+  const consumerImportProbes = runtimeConsumers.map((relativePath) => ({
+    relativePath,
+    result: spawnSync(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      'await import(' + JSON.stringify(pathToFileURL(path.join(root, relativePath)).href) + ')',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30_000,
+      windowsHide: true,
+    }),
+  }));
+  check(
+    'all three shared Python resolver consumers import without CLI side effects',
+    consumerImportProbes.every(({ result }) => (
+      result.status === 0
+        && result.stdout === ''
+        && result.stderr === ''
+    )),
+    consumerImportProbes.map(({ relativePath, result }) => (
+      relativePath
+        + ': status=' + String(result.status)
+        + '; signal=' + String(result.signal)
+        + '; error=' + (result.error ? errorDetailForCheck(result.error) : '<none>')
+        + '; stdout=' + JSON.stringify(result.stdout)
+        + '; stderr=' + JSON.stringify(result.stderr)
+    )).join(' | '),
+  );
+
+  const resolverRoot = path.resolve(tmpdir(), '__blueprints_python_resolver_fixture__');
+  const windowsEnv = {
+    HOME: 'Q:\\Wrong Home',
+    PATH: 'R:\\fixture-bin',
+    PYTHON: 'fixture-env-python',
+    USERPROFILE: 'R:\\Fixture Home',
+  };
+  const windowsBundle = path.win32.join(
+    windowsEnv.USERPROFILE,
+    '.cache',
+    'codex-runtimes',
+    'codex-primary-runtime',
+    'dependencies',
+    'python',
+    'python.exe',
+  );
+  const orderedCalls = [];
+  const orderedSelection = resolvePython({
+    env: windowsEnv,
+    exists: (candidate) => candidate === windowsBundle,
+    platform: 'win32',
+    root: resolverRoot,
+    spawn: (command, args, options) => {
+      orderedCalls.push({ args, command, options });
+      return {
+        error: null,
+        signal: null,
+        status: command === windowsBundle ? 0 : 1,
+        stderr: '',
+        stdout: '',
+      };
+    },
+  });
+  const expectedOrderedProbes = [
+    { args: ['--version'], command: 'fixture-env-python' },
+    { args: ['--version'], command: 'python3' },
+    { args: ['--version'], command: 'python' },
+    { args: ['-3', '--version'], command: 'py' },
+    { args: ['--version'], command: windowsBundle },
+  ];
+  check(
+    'shared Python resolver preserves candidate order, py prefix, bundled-last selection, and bounded no-shell options',
+    JSON.stringify(orderedSelection) === JSON.stringify({ command: windowsBundle, args: [] })
+      && JSON.stringify(orderedCalls.map(({ args, command }) => ({ args, command })))
+        === JSON.stringify(expectedOrderedProbes)
+      && orderedCalls.every(({ options }) => (
+        options.cwd === resolverRoot
+          && options.encoding === 'utf8'
+          && options.env === windowsEnv
+          && options.killSignal === 'SIGTERM'
+          && options.shell === false
+          && options.timeout === 30_000
+          && options.windowsHide === true
+      )),
+  );
+
+  const rawEnvCalls = [];
+  const rawEnvCommand = 'R:\\Python With Spaces\\python.exe --literal';
+  const rawEnvSelection = resolvePython({
+    env: { PYTHON: rawEnvCommand },
+    exists: () => false,
+    platform: 'win32',
+    root: resolverRoot,
+    spawn: (command, args) => {
+      rawEnvCalls.push({ args, command });
+      return { error: null, signal: null, status: 0, stdout: 'Python 2.7.18', stderr: '' };
+    },
+  });
+  check(
+    'shared Python resolver keeps raw PYTHON priority and status-zero output compatibility',
+    JSON.stringify(rawEnvSelection) === JSON.stringify({ command: rawEnvCommand, args: [] })
+      && JSON.stringify(rawEnvCalls.map(({ args, command }) => [command, args]))
+        === JSON.stringify([[rawEnvCommand, ['--version']]]),
+  );
+
+  const exhaustedCalls = [];
+  const exhaustedEnv = { HOME: '/home/fixture', PYTHON: 'throws-python' };
+  const posixBundle = path.posix.join(
+    exhaustedEnv.HOME,
+    '.cache',
+    'codex-runtimes',
+    'codex-primary-runtime',
+    'dependencies',
+    'python',
+    'bin/python',
+  );
+  const exhaustedOutcomes = [
+    () => { throw new Error('fixture spawn throw'); },
+    { error: Object.assign(new Error('fixture timeout'), { code: 'ETIMEDOUT' }), signal: null, status: null },
+    { error: null, signal: 'SIGTERM', status: null },
+    null,
+    { error: null, signal: null, status: 1 },
+  ];
+  const exhaustedSelection = resolvePython({
+    env: exhaustedEnv,
+    exists: (candidate) => candidate === posixBundle,
+    platform: 'linux',
+    root: resolverRoot,
+    spawn: (command, args) => {
+      exhaustedCalls.push({ args, command });
+      const outcome = exhaustedOutcomes[exhaustedCalls.length - 1];
+      return typeof outcome === 'function' ? outcome() : outcome;
+    },
+  });
+  check(
+    'shared Python resolver controls throw, timeout error, signal, null result, nonzero status, and exhaustion',
+    exhaustedSelection === null
+      && JSON.stringify(exhaustedCalls.map(({ args, command }) => [command, args]))
+        === JSON.stringify([
+          ['throws-python', ['--version']],
+          ['python3', ['--version']],
+          ['python', ['--version']],
+          ['py', ['-3', '--version']],
+          [posixBundle, ['--version']],
+        ]),
+  );
+
+  const abnormalZeroCalls = [];
+  const abnormalZeroSelection = resolvePython({
+    env: { PYTHON: 'error-with-zero' },
+    exists: () => false,
+    root: resolverRoot,
+    spawn: (command, args) => {
+      abnormalZeroCalls.push({ args, command });
+      if (command === 'error-with-zero') return { error: new Error('fixture error'), signal: null, status: 0 };
+      if (command === 'python3') return { error: null, signal: 'SIGTERM', status: 0 };
+      if (command === 'python') return { error: null, signal: null, status: null };
+      return { error: null, signal: null, status: 0 };
+    },
+  });
+  check(
+    'shared Python resolver rejects error, signal, and null status even when a status-zero field is present',
+    JSON.stringify(abnormalZeroSelection) === JSON.stringify({ command: 'py', args: ['-3'] })
+      && abnormalZeroCalls.length === 4,
+  );
+
+  const absentBundleCalls = [];
+  let absentBundleCandidate = '';
+  const absentBundleSelection = resolvePython({
+    env: { HOME: '/home/absent' },
+    exists: (candidate) => {
+      absentBundleCandidate = candidate;
+      return false;
+    },
+    platform: 'linux',
+    root: resolverRoot,
+    spawn: (command, args) => {
+      absentBundleCalls.push({ args, command });
+      return { error: null, signal: null, status: 1 };
+    },
+  });
+  check(
+    'shared Python resolver uses the POSIX bundled path and never probes it when absent',
+    absentBundleSelection === null
+      && absentBundleCandidate === '/home/absent/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python'
+      && absentBundleCalls.length === 3
+      && absentBundleCalls.every(({ command }) => command !== absentBundleCandidate),
+  );
+
+  let noHomeExistsCalls = 0;
+  let noHomeProbeCalls = 0;
+  const noHomeSelection = resolvePython({
+    env: {},
+    exists: () => {
+      noHomeExistsCalls += 1;
+      return true;
+    },
+    root: resolverRoot,
+    spawn: () => {
+      noHomeProbeCalls += 1;
+      return { error: null, signal: null, status: 1 };
+    },
+  });
+  check(
+    'shared Python resolver omits bundled discovery without USERPROFILE or HOME',
+    noHomeSelection === null && noHomeExistsCalls === 0 && noHomeProbeCalls === 3,
+  );
+
+  let invalidOptionSpawnCalls = 0;
+  const invalidOptionsRejected = [
+    { root: '' },
+    { timeoutMs: 0 },
+    { timeoutMs: -1 },
+    { timeoutMs: 1.5 },
+    { timeoutMs: Number.MAX_SAFE_INTEGER + 1 },
+  ].every((options) => {
+    try {
+      resolvePython({
+        env: {},
+        root: resolverRoot,
+        spawn: () => {
+          invalidOptionSpawnCalls += 1;
+          return { status: 0 };
+        },
+        ...options,
+      });
+      return false;
+    } catch (error) {
+      return error instanceof TypeError;
+    }
+  });
+  check(
+    'shared Python resolver rejects empty roots and non-positive or fractional timeouts before spawn',
+    invalidOptionsRejected && invalidOptionSpawnCalls === 0,
+  );
+
+  let throwingExistsProbeCalls = 0;
+  const throwingExistsSelection = resolvePython({
+    env: { HOME: '/home/throws' },
+    exists: () => { throw new Error('fixture exists failure'); },
+    platform: 'linux',
+    root: resolverRoot,
+    spawn: () => {
+      throwingExistsProbeCalls += 1;
+      return { error: null, signal: null, status: 1 };
+    },
+  });
+  check(
+    'shared Python resolver controls a bundled-path existence failure after standard candidates exhaust',
+    throwingExistsSelection === null && throwingExistsProbeCalls === 3,
+  );
+
+  const packagingCalls = [];
+  const packagingResolverInputs = [];
+  const packagingEnv = { PATH: 'fixture-packaging-path' };
+  const packagingStatus = runPackagingSmokeMain({
+    env: packagingEnv,
+    logger: { error: () => {} },
+    pythonResolver: (options) => {
+      packagingResolverInputs.push(options);
+      return { command: 'fixture-launcher', args: ['-3'] };
+    },
+    root: resolverRoot,
+    spawn: (command, args, options) => {
+      packagingCalls.push({ args, command, options });
+      return { error: null, signal: null, status: 0 };
+    },
+  });
+  let packagingNullTaskCalls = 0;
+  const packagingNullErrors = [];
+  const packagingNullStatus = runPackagingSmokeMain({
+    env: packagingEnv,
+    logger: { error: (message) => packagingNullErrors.push(String(message)) },
+    pythonResolver: () => null,
+    root: resolverRoot,
+    spawn: () => {
+      packagingNullTaskCalls += 1;
+      return { status: 0 };
+    },
+  });
+  check(
+    'packaging smoke forwards selected launcher args exactly and null selection starts no task process',
+    packagingStatus === 0
+      && packagingResolverInputs.length === 1
+      && packagingResolverInputs[0].env === packagingEnv
+      && packagingResolverInputs[0].root === resolverRoot
+      && packagingCalls.length === 1
+      && packagingCalls[0].command === 'fixture-launcher'
+      && JSON.stringify(packagingCalls[0].args) === JSON.stringify([
+        '-3',
+        path.join(resolverRoot, 'scripts', 'package_release.py'),
+        '--smoke',
+      ])
+      && packagingCalls[0].options.cwd === resolverRoot
+      && packagingCalls[0].options.env.PATH === packagingEnv.PATH
+      && packagingCalls[0].options.env.PYTHONDONTWRITEBYTECODE === '1'
+      && packagingCalls[0].options.stdio === 'inherit'
+      && packagingCalls[0].options.windowsHide === true
+      && packagingNullStatus === 1
+      && packagingNullTaskCalls === 0
+      && packagingNullErrors.length === 1,
+  );
+
+  const blenderBuildCalls = [];
+  const blenderResolverInputs = [];
+  const blenderBuildEnv = { PATH: 'fixture-blender-build-path' };
+  const blenderBuildOutput = path.join(resolverRoot, 'release');
+  const blenderBuildStatus = runReleaseArtifactBuild(blenderBuildOutput, {
+    commandRunner: (command, args, options) => {
+      blenderBuildCalls.push({ args, command, options });
+      return true;
+    },
+    env: blenderBuildEnv,
+    logger: { error: () => {} },
+    pythonResolver: (options) => {
+      blenderResolverInputs.push(options);
+      return { command: 'fixture-launcher', args: ['-3'] };
+    },
+  });
+  let blenderNullTaskCalls = 0;
+  const blenderNullErrors = [];
+  const blenderNullStatus = runReleaseArtifactBuild(blenderBuildOutput, {
+    commandRunner: () => {
+      blenderNullTaskCalls += 1;
+      return true;
+    },
+    env: blenderBuildEnv,
+    logger: { error: (message) => blenderNullErrors.push(String(message)) },
+    pythonResolver: () => null,
+  });
+  check(
+    'Blender release build forwards selected launcher args exactly and null selection starts no task process',
+    blenderBuildStatus === true
+      && blenderResolverInputs.length === 1
+      && blenderResolverInputs[0].env === blenderBuildEnv
+      && blenderResolverInputs[0].root === root
+      && blenderBuildCalls.length === 1
+      && blenderBuildCalls[0].command === 'fixture-launcher'
+      && JSON.stringify(blenderBuildCalls[0].args) === JSON.stringify([
+        '-3',
+        path.join(root, 'scripts', 'package_release.py'),
+        '--output-dir',
+        blenderBuildOutput,
+        '--commit',
+        'BLENDER-PACKAGED-SMOKE',
+      ])
+      && blenderBuildCalls[0].options.cwd === root
+      && blenderBuildCalls[0].options.env.PATH === blenderBuildEnv.PATH
+      && blenderBuildCalls[0].options.env.PYTHONDONTWRITEBYTECODE === '1'
+      && blenderBuildCalls[0].options.label === 'release artifact build for Blender smoke'
+      && blenderBuildCalls[0].options.timeoutMs === 60_000
+      && blenderNullStatus === false
+      && blenderNullTaskCalls === 0
+      && blenderNullErrors.length === 1,
+  );
+}
+
 if (exists('scripts/run-python-tests.mjs')) {
   const expectedPythonTestRoots = Object.freeze([
     'backend/tests',
@@ -2455,7 +2890,70 @@ if (exists('scripts/run-python-tests.mjs')) {
       && JSON.stringify(baselineCalls[0].args) === JSON.stringify(['--version'])
       && JSON.stringify(baselineCalls[1].args) === JSON.stringify(['-m', 'unittest', 'discover', '-s', 'backend/tests', '-p', 'test_*.py'])
       && JSON.stringify(baselineCalls[2].args) === JSON.stringify(['-m', 'unittest', 'discover', '-s', 'blender_addon/tests', '-p', 'test_*.py'])
-      && baselineCalls.every((call) => call.options.cwd === fakeRoot && call.options.windowsHide === true),
+      && baselineCalls.every((call) => call.options.cwd === fakeRoot && call.options.windowsHide === true)
+      && baselineCalls[0].options.env.PYTHON === 'fixture-python'
+      && baselineCalls[0].options.killSignal === 'SIGTERM'
+      && baselineCalls[0].options.shell === false
+      && baselineCalls[0].options.timeout === 30_000
+      && !Object.hasOwn(baselineCalls[1].options, 'timeout')
+      && !Object.hasOwn(baselineCalls[2].options, 'timeout'),
+  );
+
+  const launcherCalls = [];
+  const launcherOutput = fixtureLogger();
+  const launcherStatus = runPythonTestsMain({
+    env: {},
+    fsApi: fakeFilesystem(fakeRoot, clone(baselineTree)),
+    logger: launcherOutput.logger,
+    root: fakeRoot,
+    spawn: (command, args, options) => {
+      launcherCalls.push({ args, command, options });
+      if (args.at(-1) === '--version') {
+        return { error: null, signal: null, status: command === 'py' ? 0 : 1 };
+      }
+      return { error: null, signal: null, status: 0 };
+    },
+  });
+  const launcherTaskCalls = launcherCalls.filter(({ args }) => args.includes('-m'));
+  check(
+    'Python test runner forwards py launcher args to both unittest task processes',
+    launcherStatus === 0
+      && launcherOutput.errors.length === 0
+      && JSON.stringify(launcherCalls.slice(0, 3).map(({ args, command }) => [command, args]))
+        === JSON.stringify([
+          ['python3', ['--version']],
+          ['python', ['--version']],
+          ['py', ['-3', '--version']],
+        ])
+      && launcherTaskCalls.length === 2
+      && launcherTaskCalls.every(({ args, command, options }) => (
+        command === 'py'
+          && args[0] === '-3'
+          && args[1] === '-m'
+          && options.cwd === fakeRoot
+          && !Object.hasOwn(options, 'timeout')
+      )),
+  );
+
+  const noInterpreterCalls = [];
+  const noInterpreterOutput = fixtureLogger();
+  const noInterpreterStatus = runPythonTestsMain({
+    env: {},
+    fsApi: fakeFilesystem(fakeRoot, clone(baselineTree)),
+    logger: noInterpreterOutput.logger,
+    root: fakeRoot,
+    spawn: (command, args) => {
+      noInterpreterCalls.push({ args, command });
+      return { error: null, signal: null, status: 1 };
+    },
+  });
+  check(
+    'Python test runner starts no unittest task process when resolver selection is null',
+    noInterpreterStatus === 1
+      && noInterpreterCalls.length === 3
+      && noInterpreterCalls.every(({ args }) => args.at(-1) === '--version')
+      && noInterpreterOutput.errors.length === 1
+      && /Python interpreter not found/.test(noInterpreterOutput.errors[0]),
   );
 
   const failureCalls = [];
@@ -3780,6 +4278,7 @@ if (exists('.codex/hooks/post-tool-verify.js')) {
   check('post-tool routes backend source to conditional Blender', JSON.stringify(route({ file_path: 'backend/src/blueprints_backend/cli.py' })) === JSON.stringify(['quality:deep', 'test:blender:if-available']));
   check('post-tool routes Blender add-on source to conditional Blender', JSON.stringify(route({ file_path: 'blender_addon/blueprints_addon/bridge.py' })) === JSON.stringify(['quality:deep', 'test:blender:if-available']));
   check('post-tool routes package_release.py to conditional Blender', JSON.stringify(route({ file_path: 'scripts/package_release.py' })) === JSON.stringify(['quality:deep', 'test:blender:if-available']));
+  check('post-tool routes the shared Python resolver to conditional Blender', JSON.stringify(route({ file_path: 'scripts/lib/python-resolver.mjs' })) === JSON.stringify(['quality:deep', 'test:blender:if-available']));
   check('post-tool keeps backend tests on quality:deep only', JSON.stringify(route({ file_path: 'backend/tests/test_cli.py' })) === JSON.stringify(['quality:deep']));
   check('post-tool ignores irrelevant paths', route({ file_path: 'notes/local.txt' }).length === 0);
   check(
