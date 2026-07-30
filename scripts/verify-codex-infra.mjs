@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   copyFileSync,
@@ -100,6 +101,7 @@ const requiredFiles = [
   'scripts/lib/post-tool-routing.mjs',
   'scripts/lib/python-resolver.mjs',
   'scripts/verify-codex-infra.mjs',
+  'scripts/verify-codex-infra/context-hooks.mjs',
   'scripts/run-python-tests.mjs',
   'scripts/run-blender-smoke.mjs',
   'scripts/run-packaging-smoke.mjs',
@@ -190,48 +192,6 @@ const expectedHooks = Object.freeze({
     }],
   },
 });
-
-const expectedContextHooks = Object.freeze({
-  SessionStart: Object.freeze({
-    path: '.codex/hooks/session-start.js',
-    context: [
-      '3d_in_blueprints Codex infrastructure workspace.',
-      'Source of truth: AGENTS.md.',
-      'Selected scope: Blender add-on plus local standalone backend.',
-      'Active profile: blender-addon. Dormant profile: windows-exe.',
-      'Use explicit spawned subagents for broad work when available.',
-      'Before delivery, run npm run codex:ship and /review or the documented fallback.',
-    ].join(' '),
-  }),
-  UserPromptSubmit: Object.freeze({
-    path: '.codex/hooks/user-prompt-nudge.js',
-    context: '[3d_in_blueprints reminder] Read AGENTS.md, keep the selected Blender add-on + backend scope, use explicit spawned subagents for broad work, and run npm run codex:ship plus /review or the documented fallback before delivery.',
-  }),
-});
-
-const expectedUserPromptTriggers = Object.freeze([
-  'implement',
-  'refactor',
-  'audit',
-  'cleanup',
-  'agents',
-  'skills',
-  'hooks',
-  'ship',
-  'review',
-  'exe',
-  'windows',
-  'blender',
-  '\u0441\u0434\u0435\u043b\u0430\u0439',
-  '\u0434\u043e\u0431\u0430\u0432\u044c',
-  '\u0430\u0433\u0435\u043d\u0442',
-  '\u0441\u043a\u0438\u043b\u043b',
-  '\u0445\u0443\u043a',
-  '\u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446',
-  '\u043f\u0440\u043e\u0432\u0435\u0440\u044c',
-  '\u044d\u043a\u0437\u0435',
-  '\u0431\u043b\u0435\u043d\u0434\u0435\u0440',
-]);
 
 const expectedFrozenDecisions = Object.freeze([
   ['FD-001', 'Product scope is selected: Blender add-on + local standalone backend.'],
@@ -329,6 +289,119 @@ function read(rel) {
 
 function check(name, condition, detail = '') {
   checks.push({ name, condition: Boolean(condition), detail });
+}
+
+const contextHookModuleRelativePath = 'scripts/verify-codex-infra/context-hooks.mjs';
+
+function contextHookModuleSourceContract(source, expectedDigest) {
+  const value = String(source);
+  const normalizedSource = value.replace(/\r\n/g, '\n');
+  const digest = createHash('sha256').update(normalizedSource).digest('hex').toUpperCase();
+  const errors = [];
+  if (value.startsWith('\uFEFF')) errors.push('module source must not start with a BOM');
+  if (digest !== expectedDigest) errors.push(`normalized sha256=${digest}; expected=${expectedDigest}`);
+  return Object.freeze({ digest, errors: Object.freeze(errors) });
+}
+
+function contextHookModuleSnapshotUrlForSource(source) {
+  return `data:text/javascript;base64,${Buffer.from(String(source), 'utf8').toString('base64')}`;
+}
+
+function contextHookModuleSnapshotUrlMatchesSource(snapshotUrl, source) {
+  const prefix = 'data:text/javascript;base64,';
+  return typeof snapshotUrl === 'string'
+    && snapshotUrl.startsWith(prefix)
+    && Buffer.from(snapshotUrl.slice(prefix.length), 'base64').toString('utf8') === String(source);
+}
+
+function contextHookImportProbeIsSafe(result, sentinel) {
+  return result?.status === 0
+    && result.signal === null
+    && !result.error
+    && result.stdout === sentinel
+    && result.stderr === '';
+}
+
+function contextHookModuleExportContractErrors(moduleNamespace) {
+  const errors = [];
+  if (!moduleNamespace || (typeof moduleNamespace !== 'object' && typeof moduleNamespace !== 'function')) {
+    return ['module namespace must be an object'];
+  }
+
+  const exportNames = Object.keys(moduleNamespace).sort();
+  if (JSON.stringify(exportNames) !== JSON.stringify(['registerContextHookChecks'])) {
+    errors.push(`exports=${exportNames.join(',') || '<none>'}`);
+  }
+  if (typeof moduleNamespace.registerContextHookChecks !== 'function') {
+    errors.push('registerContextHookChecks must be a function');
+  }
+  return errors;
+}
+
+function contextHookRegistrationInvocationErrors(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return ['registration invocation result must be an object'];
+  }
+
+  const errors = [];
+  if (
+    JSON.stringify(Object.keys(result).sort())
+      !== JSON.stringify(['arity', 'calls', 'error', 'returnValue', 'threw'])
+  ) {
+    errors.push('registration invocation result has an invalid shape');
+  }
+  if (result.calls !== 1) errors.push(`calls=${result.calls}`);
+  if (result.arity !== 1) errors.push(`arity=${result.arity}`);
+  if (result.returnValue !== undefined) errors.push('registration must return undefined synchronously');
+  if (typeof result.threw !== 'boolean') errors.push('threw must be a boolean');
+  if (result.threw === true) errors.push(`registration threw: ${errorDetailForCheck(result.error)}`);
+  if (result.threw === false && result.error !== null) errors.push('non-null error without a throw');
+  return errors;
+}
+
+function contextHookRegistrationExpectation(names) {
+  return Object.freeze({
+    count: names.length,
+    digest: createHash('sha256').update(names.join('\n')).digest('hex').toUpperCase(),
+    first: names.at(0),
+    last: names.at(-1),
+  });
+}
+
+function contextHookRegistrationValidationErrors(records, expected) {
+  const errors = [];
+  if (!Array.isArray(records)) return ['registration records must be an array'];
+
+  const names = [];
+  for (const [index, record] of records.entries()) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      errors.push(`record ${index} must be an object`);
+      continue;
+    }
+    if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(['condition', 'detail', 'name'])) {
+      errors.push(`record ${index} has an invalid shape`);
+      continue;
+    }
+    if (typeof record.name !== 'string' || record.name.length === 0) {
+      errors.push(`record ${index} has an invalid name`);
+    } else {
+      names.push(record.name);
+    }
+    if (typeof record.condition !== 'boolean') errors.push(`record ${index} has a non-boolean condition`);
+    if (typeof record.detail !== 'string') errors.push(`record ${index} has a non-string detail`);
+  }
+
+  if (new Set(names).size !== names.length) errors.push('registration records contain duplicate names');
+  if (records.length !== expected.count) {
+    errors.push(`registered ${records.length} checks; expected ${expected.count}`);
+    return errors;
+  }
+
+  const actualDigest = createHash('sha256').update(names.join('\n')).digest('hex').toUpperCase();
+  if (names.at(0) !== expected.first) errors.push(`first=${names.at(0) || '<none>'}`);
+  if (names.at(-1) !== expected.last) errors.push(`last=${names.at(-1) || '<none>'}`);
+  if (actualDigest !== expected.digest) errors.push(`sha256=${actualDigest}`);
+  return errors;
 }
 
 function checkFrozenLive(id, name, condition, detail = '') {
@@ -954,160 +1027,6 @@ function normalizeWhitespace(value) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
-}
-
-function contextHookEnvelope(eventName, additionalContext, extra = {}) {
-  return {
-    hookSpecificOutput: {
-      hookEventName: eventName,
-      additionalContext,
-      ...(extra.hookSpecificOutput || {}),
-    },
-    ...(extra.topLevel || {}),
-  };
-}
-
-function contextHookResult({
-  eventName,
-  additionalContext,
-  stdout,
-  stderr = '',
-  status = 0,
-  signal = null,
-  error = null,
-  extra,
-} = {}) {
-  return {
-    error,
-    signal,
-    status,
-    stderr,
-    stdout: stdout ?? JSON.stringify(contextHookEnvelope(eventName, additionalContext, extra)),
-  };
-}
-
-function runContextHook(relativePath, input = '') {
-  try {
-    const result = spawnSync(process.execPath, [path.join(root, relativePath)], {
-      cwd: root,
-      encoding: 'utf8',
-      input,
-      killSignal: 'SIGTERM',
-      timeout: 4_000,
-      windowsHide: true,
-    });
-    return {
-      error: result?.error || null,
-      signal: result?.signal || null,
-      status: result?.status,
-      stderr: result?.stderr == null ? '' : String(result.stderr),
-      stdout: result?.stdout == null ? '' : String(result.stdout),
-    };
-  } catch (error) {
-    return {
-      error,
-      signal: null,
-      status: null,
-      stderr: '',
-      stdout: '',
-    };
-  }
-}
-
-function contextHookExecutionErrors(result, {
-  eventName,
-  additionalContext,
-  output = 'required',
-}) {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) {
-    return ['hook execution result must be an object'];
-  }
-
-  const errors = [];
-  const stderr = result.stderr == null ? '' : String(result.stderr);
-  const stdout = result.stdout == null ? '' : String(result.stdout);
-  if (result.error) {
-    const code = result.error.code ? `${result.error.code}: ` : '';
-    errors.push(`hook process error: ${code}${result.error.message || String(result.error)}`);
-  }
-  if (result.signal) errors.push(`hook process terminated by ${result.signal}`);
-  if (result.status === null || result.status === undefined) {
-    errors.push('hook process returned no exit status');
-  } else if (result.status !== 0) {
-    errors.push(`hook process exited with status ${result.status}`);
-  }
-  if (stderr !== '') errors.push('hook process wrote to stderr');
-
-  if (output === 'forbidden') {
-    if (stdout !== '') errors.push('hook process produced unexpected stdout');
-    return errors;
-  }
-  if (stdout === '') {
-    errors.push('hook process produced no stdout');
-    return errors;
-  }
-  if (stdout !== stdout.trim()) errors.push('hook stdout has leading or trailing whitespace');
-
-  let envelope;
-  try {
-    envelope = JSON.parse(stdout);
-  } catch {
-    errors.push('hook stdout is not exactly one JSON value');
-    return errors;
-  }
-  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
-    errors.push('hook envelope must be an object');
-    return errors;
-  }
-  const topLevelKeys = Object.keys(envelope).sort();
-  if (JSON.stringify(topLevelKeys) !== JSON.stringify(['hookSpecificOutput'])) {
-    errors.push(`hook envelope keys differ: ${topLevelKeys.join(', ')}`);
-  }
-
-  const hookOutput = envelope.hookSpecificOutput;
-  if (!hookOutput || typeof hookOutput !== 'object' || Array.isArray(hookOutput)) {
-    errors.push('hookSpecificOutput must be an object');
-    return errors;
-  }
-  const outputKeys = Object.keys(hookOutput).sort();
-  if (JSON.stringify(outputKeys) !== JSON.stringify(['additionalContext', 'hookEventName'])) {
-    errors.push(`hookSpecificOutput keys differ: ${outputKeys.join(', ')}`);
-  }
-  if (hookOutput.hookEventName !== eventName) errors.push('hook event differs');
-  if (typeof hookOutput.additionalContext !== 'string') {
-    errors.push('hook additionalContext must be a string');
-  } else if (hookOutput.additionalContext !== additionalContext) {
-    errors.push('hook additionalContext differs from the approved event contract');
-  }
-  return errors;
-}
-
-function userPromptTriggerInventoryErrors(source) {
-  const block = /const triggers = \[([\s\S]*?)\n\s*\];/.exec(source)?.[1];
-  if (block === undefined) return ['UserPromptSubmit trigger inventory is missing'];
-
-  const errors = [];
-  const triggers = [];
-  const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  for (const [index, line] of lines.entries()) {
-    const match = /^'((?:\\.|[^'\\])*)'(,?)$/.exec(line);
-    if (!match) {
-      errors.push(`invalid trigger entry: ${line}`);
-      continue;
-    }
-    if (index < lines.length - 1 && match[2] !== ',') {
-      errors.push(`missing trigger separator: ${line}`);
-    }
-    try {
-      triggers.push(JSON.parse(`"${match[1].replaceAll('"', '\\"')}"`));
-    } catch {
-      errors.push(`invalid trigger string: ${line}`);
-    }
-  }
-  if (JSON.stringify(triggers) !== JSON.stringify(expectedUserPromptTriggers)) {
-    errors.push(`UserPromptSubmit triggers differ: ${triggers.join(', ')}`);
-  }
-  return errors;
 }
 
 function fakeFilesystem(fakeRoot, tree, failures = {}) {
@@ -1840,195 +1759,316 @@ if (exists('.codex/hooks.json')) {
   }
 }
 
-if (
-  exists(expectedContextHooks.SessionStart.path)
-  && exists(expectedContextHooks.UserPromptSubmit.path)
-) {
-  const executionContract = (eventName, output = 'required') => ({
-    eventName,
-    additionalContext: expectedContextHooks[eventName].context,
-    output,
-  });
-  const errorsFor = (eventName, result, output = 'required') => (
-    contextHookExecutionErrors(result, executionContract(eventName, output))
-  );
-  const checkExecution = (name, eventName, result, output = 'required') => {
-    const errors = errorsFor(eventName, result, output);
-    check(name, errors.length === 0, errors.join('; '));
-  };
 
-  const sessionEmpty = runContextHook(expectedContextHooks.SessionStart.path);
-  const sessionNoise = runContextHook(
-    expectedContextHooks.SessionStart.path,
-    JSON.stringify({ ignored: 'input' }),
-  );
-  checkExecution('SessionStart executable emits the approved exact contract', 'SessionStart', sessionEmpty);
-  checkExecution('SessionStart ignores arbitrary stdin deterministically', 'SessionStart', sessionNoise);
+const expectedContextHookLegacyContract = Object.freeze({
+  count: 105,
+  digest: '7256DBECCF700EB3684002B899FDA124D3E370E700EA9B4B2E71A3232552473F',
+  first: 'SessionStart executable emits the approved exact contract',
+  last: 'context hook no-output oracle rejects unexpected stdout',
+});
+const expectedContextHookModuleSourceDigest = 'D5C2EF9CC0AFE8327747019A3D3A7BD599A09726104A3D2D6EF03341F9701518';
+const contextHookModuleSourceFixture = 'export function registerContextHookChecks(options) {}\n';
+const contextHookModuleSourceFixtureDigest = '916116AA1B6BA87F1326FD391CD6115411D340C561346C2901A7FD43D8C643E9';
+check(
+  'context hook source contract accepts the exact baseline with LF or CRLF endings',
+  contextHookModuleSourceContract(
+    contextHookModuleSourceFixture,
+    contextHookModuleSourceFixtureDigest,
+  ).errors.length === 0
+    && contextHookModuleSourceContract(
+      contextHookModuleSourceFixture.replaceAll('\n', '\r\n'),
+      contextHookModuleSourceFixtureDigest,
+    ).errors.length === 0,
+);
+for (const [name, source] of [
+  ['appended source', `${contextHookModuleSourceFixture}// appended mutation\n`],
+  ['changed source', contextHookModuleSourceFixture.replace('options', 'changedOptions')],
+]) {
   check(
-    'SessionStart output is byte-deterministic across input',
-    sessionEmpty.stdout === sessionNoise.stdout,
-  );
-
-  const userPromptSource = read(expectedContextHooks.UserPromptSubmit.path);
-  const triggerInventoryErrors = userPromptTriggerInventoryErrors(userPromptSource);
-  check(
-    'UserPromptSubmit trigger inventory is exact',
-    triggerInventoryErrors.length === 0,
-    triggerInventoryErrors.join('; '),
-  );
-  check(
-    'UserPromptSubmit trigger inventory rejects an additive entry',
-    userPromptTriggerInventoryErrors(
-      userPromptSource.replace("    'blender',", "    'blender',\n    'deploy',"),
-    ).length > 0,
-  );
-  check(
-    'UserPromptSubmit trigger inventory rejects a deleted entry',
-    userPromptTriggerInventoryErrors(
-      userPromptSource.replace("    'blender',", ''),
-    ).length > 0,
-  );
-
-  for (const trigger of expectedUserPromptTriggers) {
-    checkExecution(
-      `UserPromptSubmit executable preserves trigger: ${trigger}`,
-      'UserPromptSubmit',
-      runContextHook(
-        expectedContextHooks.UserPromptSubmit.path,
-        JSON.stringify({ prompt: `please ${trigger} now` }),
-      ),
-    );
-  }
-  for (const prompt of ['AUDIT HOOKS', '\u041f\u0420\u041e\u0412\u0415\u0420\u042c \u0425\u0423\u041a', 'shipping labels', 'reviewer notes', 'execute a calculation']) {
-    checkExecution(
-      `UserPromptSubmit preserves case-insensitive substring behavior: ${prompt}`,
-      'UserPromptSubmit',
-      runContextHook(
-        expectedContextHooks.UserPromptSubmit.path,
-        JSON.stringify({ prompt }),
-      ),
-    );
-  }
-
-  for (const [name, input] of [
-    ['legacy user_prompt alias', JSON.stringify({ user_prompt: 'audit hooks' })],
-    ['empty primary fallback', JSON.stringify({ prompt: '', user_prompt: 'audit hooks' })],
-    ['false primary fallback', JSON.stringify({ prompt: false, user_prompt: 'audit hooks' })],
-    ['zero primary fallback', JSON.stringify({ prompt: 0, user_prompt: 'audit hooks' })],
-    ['null primary fallback', JSON.stringify({ prompt: null, user_prompt: 'audit hooks' })],
-    ['raw malformed trigger fallback', 'audit hooks {'],
-  ]) {
-    checkExecution(
-      `UserPromptSubmit emits the approved reminder for ${name}`,
-      'UserPromptSubmit',
-      runContextHook(expectedContextHooks.UserPromptSubmit.path, input),
-    );
-  }
-
-  for (const [name, input] of [
-    ['empty input', ''],
-    ['empty object', '{}'],
-    ['non-trigger', JSON.stringify({ prompt: 'hello world' })],
-    ['whitespace prompt', JSON.stringify({ prompt: '   ' })],
-    ['truthy string primary precedence', JSON.stringify({ prompt: 'hello', user_prompt: 'audit hooks' })],
-    ['truthy numeric primary', JSON.stringify({ prompt: 42, user_prompt: 'audit hooks' })],
-    ['truthy boolean primary', JSON.stringify({ prompt: true, user_prompt: 'audit hooks' })],
-    ['truthy object primary', JSON.stringify({ prompt: {}, user_prompt: 'audit hooks' })],
-    ['truthy array primary', JSON.stringify({ prompt: [], user_prompt: 'audit hooks' })],
-    ['truthy numeric alias', JSON.stringify({ user_prompt: 42 })],
-    ['truthy boolean alias', JSON.stringify({ user_prompt: true })],
-    ['truthy object alias', JSON.stringify({ user_prompt: {} })],
-    ['truthy array alias', JSON.stringify({ user_prompt: [] })],
-    ['top-level null', 'null'],
-    ['top-level boolean', 'true'],
-    ['top-level number', '42'],
-    ['top-level string', JSON.stringify('audit hooks')],
-    ['top-level array', '[]'],
-    ['raw malformed non-trigger', 'hello {'],
-    ['raw whitespace', '   '],
-  ]) {
-    checkExecution(
-      `UserPromptSubmit exits silently for ${name}`,
-      'UserPromptSubmit',
-      runContextHook(expectedContextHooks.UserPromptSubmit.path, input),
-      'forbidden',
-    );
-  }
-
-  for (const eventName of ['SessionStart', 'UserPromptSubmit']) {
-    const context = expectedContextHooks[eventName].context;
-    const baseline = contextHookResult({ eventName, additionalContext: context });
-    check(
-      `${eventName} semantic oracle accepts its baseline fixture`,
-      errorsFor(eventName, baseline).length === 0,
-    );
-    const mutants = eventName === 'SessionStart'
-      ? [
-        ['workspace identity removal', (value) => value.replace('3d_in_blueprints Codex infrastructure workspace. ', '')],
-        ['authority removal', (value) => value.replace('Source of truth: AGENTS.md. ', '')],
-        ['scope replacement', (value) => value.replace('Blender add-on plus local standalone backend', 'Windows executable')],
-        ['profile inversion', (value) => value.replace('Active profile: blender-addon. Dormant profile: windows-exe.', 'Active profile: windows-exe. Dormant profile: blender-addon.')],
-        ['orchestration removal', (value) => value.replace('Use explicit spawned subagents for broad work when available. ', '')],
-        ['ship weakening', (value) => value.replace('npm run codex:ship', 'npm run quality:deep')],
-        ['review removal', (value) => value.replace('and /review or the documented fallback', '')],
-        ['contradictory profile addition', (value) => `${value} Active profile: windows-exe.`],
-      ]
-      : [
-        ['authority removal', (value) => value.replace('Read AGENTS.md, ', '')],
-        ['scope replacement', (value) => value.replace('Blender add-on + backend', 'Windows executable')],
-        ['orchestration removal', (value) => value.replace('use explicit spawned subagents for broad work, ', '')],
-        ['ship weakening', (value) => value.replace('npm run codex:ship', 'npm run quality:deep')],
-        ['review removal', (value) => value.replace('plus /review or the documented fallback', '')],
-        ['contradictory profile addition', (value) => `${value} Active profile: windows-exe.`],
-      ];
-    for (const [name, mutate] of mutants) {
-      const mutatedContext = mutate(context);
-      const candidate = contextHookResult({ eventName, additionalContext: mutatedContext });
-      check(`${eventName} semantic mutant changes ${name}`, mutatedContext !== context);
-      check(
-        `${eventName} semantic oracle rejects ${name}`,
-        errorsFor(eventName, candidate).length > 0,
-      );
-    }
-  }
-
-  const sessionContext = expectedContextHooks.SessionStart.context;
-  const sessionFixture = (overrides = {}) => contextHookResult({
-    eventName: 'SessionStart',
-    additionalContext: sessionContext,
-    ...overrides,
-  });
-  for (const [name, result] of [
-    ['missing result', null],
-    ['spawn error', sessionFixture({ error: Object.assign(new Error('spawn failed'), { code: 'ENOENT' }), status: null })],
-    ['timeout', sessionFixture({ error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }), status: null })],
-    ['signal', sessionFixture({ signal: 'SIGTERM', status: null })],
-    ['null status', sessionFixture({ status: null })],
-    ['nonzero status', sessionFixture({ status: 1 })],
-    ['stderr output', sessionFixture({ stderr: 'unexpected' })],
-    ['empty stdout', sessionFixture({ stdout: '' })],
-    ['invalid JSON', sessionFixture({ stdout: '{' })],
-    ['multiple JSON values', sessionFixture({ stdout: '{}{}' })],
-    ['leading whitespace', sessionFixture({ stdout: ` ${sessionFixture().stdout}` })],
-    ['wrong event', contextHookResult({ eventName: 'UserPromptSubmit', additionalContext: sessionContext })],
-    ['non-string context', sessionFixture({ stdout: JSON.stringify(contextHookEnvelope('SessionStart', 42)) })],
-    ['extra top-level key', sessionFixture({ extra: { topLevel: { extra: true } } })],
-    ['extra hook key', sessionFixture({ extra: { hookSpecificOutput: { extra: true } } })],
-    ['missing hookSpecificOutput', sessionFixture({ stdout: '{}' })],
-  ]) {
-    check(
-      `context hook process fixture rejects ${name}`,
-      contextHookExecutionErrors(result, executionContract('SessionStart')).length > 0,
-    );
-  }
-  check(
-    'context hook no-output oracle rejects unexpected stdout',
-    contextHookExecutionErrors(
-      contextHookResult({ stdout: 'unexpected' }),
-      executionContract('UserPromptSubmit', 'forbidden'),
-    ).length > 0,
+    `context hook source contract rejects ${name}`,
+    contextHookModuleSourceContract(source, contextHookModuleSourceFixtureDigest).errors.length > 0,
   );
 }
+check(
+  'context hook source contract rejects a leading BOM',
+  contextHookModuleSourceContract(
+    `\uFEFF${contextHookModuleSourceFixture}`,
+    contextHookModuleSourceFixtureDigest,
+  ).errors.some((error) => error.includes('BOM')),
+);
+const contextHookModuleSnapshotUrlFixture = contextHookModuleSnapshotUrlForSource(
+  contextHookModuleSourceFixture,
+);
+check(
+  'context hook source snapshot URL round-trips only the exact source',
+  contextHookModuleSnapshotUrlMatchesSource(
+    contextHookModuleSnapshotUrlFixture,
+    contextHookModuleSourceFixture,
+  )
+    && !contextHookModuleSnapshotUrlMatchesSource(
+      contextHookModuleSnapshotUrlFixture,
+      `${contextHookModuleSourceFixture}// mutation`,
+    ),
+);
+
+const contextHookModuleSource = exists(contextHookModuleRelativePath) ? read(contextHookModuleRelativePath) : '';
+const contextHookModuleSourceContractResult = contextHookModuleSourceContract(
+  contextHookModuleSource,
+  expectedContextHookModuleSourceDigest,
+);
+check(
+  'context hook verifier module matches the normalized-source golden before import',
+  contextHookModuleSourceContractResult.errors.length === 0,
+  contextHookModuleSourceContractResult.errors.join('; '),
+);
+const contextHookModuleSnapshotUrl = contextHookModuleSourceContractResult.errors.length === 0
+  ? contextHookModuleSnapshotUrlForSource(contextHookModuleSource)
+  : '';
+const contextHookModuleSnapshotMatchesSource = contextHookModuleSnapshotUrlMatchesSource(
+  contextHookModuleSnapshotUrl,
+  contextHookModuleSource,
+);
+check(
+  'context hook verifier import snapshot preserves the accepted source read exactly',
+  contextHookModuleSourceContractResult.errors.length === 0
+    && contextHookModuleSnapshotMatchesSource,
+);
+
+const contextHookImportProbeSentinel = 'BLUEPRINTS_CONTEXT_HOOK_IMPORT_OK';
+const contextHookModuleImportProbe = contextHookModuleSourceContractResult.errors.length === 0
+    && contextHookModuleSnapshotMatchesSource
+  ? spawnSync(process.execPath, [
+    '--input-type=module',
+    '--eval',
+    'await import('
+      + JSON.stringify(contextHookModuleSnapshotUrl)
+      + '); process.stdout.write('
+      + JSON.stringify(contextHookImportProbeSentinel)
+      + ')',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 30_000,
+    windowsHide: true,
+  })
+  : { error: null, signal: null, status: null, stderr: 'source golden precheck rejected the module', stdout: '' };
+const contextHookImportProbeSafe = contextHookImportProbeIsSafe(contextHookModuleImportProbe, contextHookImportProbeSentinel);
+check('context hook verifier child imports the source snapshot and reaches only the exact sentinel', contextHookImportProbeSafe);
+
+const contextHookImportCheckCount = checks.length;
+let contextHookModule = null;
+let contextHookModuleImportError = null;
+if (
+  contextHookModuleSourceContractResult.errors.length === 0
+  && contextHookModuleSnapshotMatchesSource
+  && contextHookImportProbeSafe
+) {
+  try {
+    contextHookModule = await import(contextHookModuleSnapshotUrl);
+  } catch (error) {
+    contextHookModuleImportError = error;
+  }
+}
+const contextHookModuleImportRegistrationCount = checks.length - contextHookImportCheckCount;
+const contextHookModuleExportFixture = { registerContextHookChecks(options) {} };
+check(
+  'context hook module export contract accepts the exact baseline',
+  contextHookModuleExportContractErrors(contextHookModuleExportFixture).length === 0,
+);
+for (const [name, moduleNamespace] of [
+  ['missing export', {}],
+  ['additional export', { ...contextHookModuleExportFixture, additionalExport: true }],
+  ['non-function export', { registerContextHookChecks: true }],
+]) {
+  check(
+    `context hook module export contract rejects ${name}`,
+    contextHookModuleExportContractErrors(moduleNamespace).length > 0,
+  );
+}
+const contextHookModuleExportErrors = contextHookModuleExportContractErrors(contextHookModule);
+check(
+  'context hook verifier module has the exact sole registration export',
+  !contextHookModuleImportError && contextHookModuleExportErrors.length === 0,
+  contextHookModuleImportError
+    ? errorDetailForCheck(contextHookModuleImportError)
+    : contextHookModuleExportErrors.join('; '),
+);
+check(
+  'context hook verifier parent imports the verified source snapshot after the child probe',
+  !contextHookModuleImportError
+    && contextHookModuleSourceContractResult.errors.length === 0
+    && contextHookModuleSnapshotMatchesSource
+    && contextHookImportProbeSafe,
+);
+check('context hook verifier import registers no checks', contextHookModuleImportRegistrationCount === 0, 'registered=' + contextHookModuleImportRegistrationCount);
+
+const registeredContextHookChecks = [];
+const contextHookRegistrationOptions = Object.freeze({
+  check(name, condition, detail = '') {
+    registeredContextHookChecks.push({ name, condition: Boolean(condition), detail });
+  },
+  exists,
+  read,
+  root,
+  spawn: spawnSync,
+  execPath: process.execPath,
+  join: path.join,
+});
+let contextHookRegistrationCalls = 0;
+let contextHookRegistrationError = null;
+let contextHookRegistrationReturn;
+let contextHookRegistrationThrew = false;
+const contextHookRegistrationArity = contextHookModuleExportErrors.length === 0
+  ? contextHookModule.registerContextHookChecks.length
+  : null;
+if (contextHookModuleExportErrors.length === 0) {
+  contextHookRegistrationCalls += 1;
+  try {
+    contextHookRegistrationReturn = contextHookModule.registerContextHookChecks(contextHookRegistrationOptions);
+  } catch (error) {
+    contextHookRegistrationThrew = true;
+    contextHookRegistrationError = error;
+  }
+}
+const contextHookInvocationFixtureBaseline = Object.freeze({
+  arity: 1,
+  calls: 1,
+  error: null,
+  returnValue: undefined,
+  threw: false,
+});
+check(
+  'context hook registration invocation contract accepts the exact baseline',
+  contextHookRegistrationInvocationErrors(contextHookInvocationFixtureBaseline).length === 0,
+);
+for (const [name, result] of [
+  ['zero calls', { ...contextHookInvocationFixtureBaseline, calls: 0 }],
+  ['two calls', { ...contextHookInvocationFixtureBaseline, calls: 2 }],
+  ['arity mismatch', { ...contextHookInvocationFixtureBaseline, arity: 0 }],
+  ['Promise or async return', { ...contextHookInvocationFixtureBaseline, returnValue: Promise.resolve() }],
+  [
+    'thrown error',
+    { ...contextHookInvocationFixtureBaseline, error: new Error('fixture error'), threw: true },
+  ],
+  [
+    'throw undefined',
+    { ...contextHookInvocationFixtureBaseline, error: undefined, threw: true },
+  ],
+]) {
+  check(
+    `context hook registration invocation contract rejects ${name}`,
+    contextHookRegistrationInvocationErrors(result).length > 0,
+  );
+}
+const contextHookRegistrationInvocation = Object.freeze({
+  arity: contextHookRegistrationArity,
+  calls: contextHookRegistrationCalls,
+  error: contextHookRegistrationError,
+  returnValue: contextHookRegistrationReturn,
+  threw: contextHookRegistrationThrew,
+});
+const contextHookRegistrationInvocationErrorsFound = contextHookRegistrationInvocationErrors(
+  contextHookRegistrationInvocation,
+);
+const contextHookRegistrationValidation = contextHookRegistrationValidationErrors(
+  registeredContextHookChecks,
+  expectedContextHookLegacyContract,
+);
+check(
+  'context hook verifier registration uses one injected options object exactly once',
+  contextHookRegistrationInvocationErrorsFound.length === 0,
+  contextHookRegistrationInvocationErrorsFound.join('; '),
+);
+check('context hook verifier registration preserves the exact legacy 105-check order', contextHookRegistrationValidation.length === 0, contextHookRegistrationValidation.join('; '));
+const contextHookRegistrationReady = contextHookRegistrationInvocation.threw === false
+  && contextHookRegistrationInvocationErrorsFound.length === 0
+  && contextHookRegistrationValidation.length === 0;
+const contextHookReplayStart = checks.length;
+if (contextHookRegistrationReady) {
+  for (const record of registeredContextHookChecks) check(record.name, record.condition, record.detail);
+}
+const replayedContextHookNames = checks.slice(contextHookReplayStart).map(({ name }) => name);
+check(
+  'context hook verifier atomically replays the validated 105 records exactly once',
+  contextHookRegistrationReady
+    && JSON.stringify(replayedContextHookNames) === JSON.stringify(
+      registeredContextHookChecks.map(({ name }) => name),
+    ),
+);
+
+const contextHookRegistrationFixtureBaseline = Object.freeze(['first', 'second', 'third']);
+const contextHookRegistrationFixtureExpectation = contextHookRegistrationExpectation(contextHookRegistrationFixtureBaseline);
+const contextHookRegistrationFixtureRecords = contextHookRegistrationFixtureBaseline.map((name) => ({ condition: true, detail: '', name }));
+check('context hook registrar validation accepts an independent exact record baseline', contextHookRegistrationValidationErrors(contextHookRegistrationFixtureRecords, contextHookRegistrationFixtureExpectation).length === 0);
+for (const [name, records] of [
+  ['non-array records', null],
+  ['missing record', contextHookRegistrationFixtureRecords.slice(0, -1)],
+  ['additional record', [...contextHookRegistrationFixtureRecords, { condition: true, detail: '', name: 'fourth' }]],
+  ['duplicate record', [...contextHookRegistrationFixtureRecords.slice(0, -1), { condition: true, detail: '', name: 'second' }]],
+  ['reordered records', [...contextHookRegistrationFixtureRecords].reverse()],
+  ['renamed record', [{ condition: true, detail: '', name: 'renamed' }, ...contextHookRegistrationFixtureRecords.slice(1)]],
+  ['malformed record', [null, ...contextHookRegistrationFixtureRecords.slice(1)]],
+  [
+    'record with an extra key',
+    [{ ...contextHookRegistrationFixtureRecords[0], extra: true }, ...contextHookRegistrationFixtureRecords.slice(1)],
+  ],
+  [
+    'record with an empty name',
+    [{ ...contextHookRegistrationFixtureRecords[0], name: '' }, ...contextHookRegistrationFixtureRecords.slice(1)],
+  ],
+  [
+    'record with a non-boolean condition',
+    [{ ...contextHookRegistrationFixtureRecords[0], condition: 1 }, ...contextHookRegistrationFixtureRecords.slice(1)],
+  ],
+  [
+    'record with a non-string detail',
+    [{ ...contextHookRegistrationFixtureRecords[0], detail: null }, ...contextHookRegistrationFixtureRecords.slice(1)],
+  ],
+]) check('context hook registrar validation rejects ' + name, contextHookRegistrationValidationErrors(records, contextHookRegistrationFixtureExpectation).length > 0);
+
+const contextHookModuleLiteralReferenceInventory = collectJavaScriptFiles({ root });
+const contextHookModuleBasename = path.basename(contextHookModuleRelativePath);
+const contextHookModuleFullPathLiteralReferenceFiles = contextHookModuleLiteralReferenceInventory.files
+  .filter((relativePath) => read(relativePath).includes(contextHookModuleRelativePath))
+  .sort();
+const contextHookModuleBasenameLiteralReferenceFiles = contextHookModuleLiteralReferenceInventory.files
+  .filter((relativePath) => read(relativePath).includes(contextHookModuleBasename))
+  .sort();
+check(
+  'context hook verifier literal-reference inventory is main-only',
+  contextHookModuleLiteralReferenceInventory.diagnostics.length === 0
+    && JSON.stringify(contextHookModuleFullPathLiteralReferenceFiles)
+      === JSON.stringify(['scripts/verify-codex-infra.mjs'])
+    && JSON.stringify(contextHookModuleBasenameLiteralReferenceFiles)
+      === JSON.stringify(['scripts/verify-codex-infra.mjs']),
+  [
+    ...contextHookModuleFullPathLiteralReferenceFiles,
+    ...contextHookModuleBasenameLiteralReferenceFiles,
+  ].join(', '),
+);
+const productionContextHookSources = Object.freeze([
+  '.codex/hooks/session-start.js',
+  '.codex/hooks/user-prompt-nudge.js',
+]);
+const productionContextHookLiteralReferenceFiles = productionContextHookSources
+  .filter((relativePath) => (
+    !exists(relativePath)
+      || read(relativePath).includes(contextHookModuleRelativePath)
+      || read(relativePath).includes(contextHookModuleBasename)
+  ));
+check(
+  'production context hooks contain no raw verifier module path or basename',
+  productionContextHookLiteralReferenceFiles.length === 0,
+  productionContextHookLiteralReferenceFiles.join(', '),
+);
+const mainVerifierSource = read('scripts/verify-codex-infra.mjs');
+check(
+  'context hook verifier extraction leaves no executable legacy declarations or block seam in main',
+  !/^const expectedContextHooks\s*=/m.test(mainVerifierSource)
+    && !/^const expectedUserPromptTriggers\s*=/m.test(mainVerifierSource)
+    && !/^function (?:contextHookEnvelope|contextHookResult|runContextHook|contextHookExecutionErrors|userPromptTriggerInventoryErrors)\s*\(/m.test(mainVerifierSource)
+    && !/^if \(\n\s*exists\(expectedContextHooks\./m.test(mainVerifierSource),
+);
 
 if (exists('.codex/config.toml')) {
   const config = read('.codex/config.toml');
