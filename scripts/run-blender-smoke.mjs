@@ -74,7 +74,7 @@ function runResolvedBlenderSmoke({ blender, version }) {
   try {
     tempRoot = mkdtempSync(path.join(tmpdir(), 'blueprints-blender-packaged-'));
     const layout = createPackagedLayout(tempRoot);
-    const artifacts = buildRelease(layout.release);
+    const artifacts = buildSmokeArtifacts(layout.release);
     if (!artifacts) return 1;
 
     const packagedEnv = isolatedPackagedEnvironment(layout, artifacts);
@@ -127,8 +127,8 @@ function createPackagedLayout(tempRoot) {
   return layout;
 }
 
-function buildRelease(outputDir) {
-  const built = runReleaseArtifactBuild(outputDir);
+function buildSmokeArtifacts(outputDir) {
+  const built = runSmokeArtifactBuild(outputDir);
   if (!built) return null;
 
   const manifestPath = path.join(outputDir, 'release_manifest.json');
@@ -146,7 +146,7 @@ function buildRelease(outputDir) {
   return { addonZip, backendZip };
 }
 
-export function runReleaseArtifactBuild(outputDir, {
+export function runSmokeArtifactBuild(outputDir, {
   commandRunner = runCommand,
   env = process.env,
   logger = console,
@@ -161,17 +161,16 @@ export function runReleaseArtifactBuild(outputDir, {
   return commandRunner(python.command, [
     ...python.args,
     packageScript,
+    '--smoke',
     '--output-dir',
     outputDir,
-    '--commit',
-    'BLENDER-PACKAGED-SMOKE',
   ], {
     cwd: root,
     env: {
       ...env,
       PYTHONDONTWRITEBYTECODE: '1',
     },
-    label: 'release artifact build for Blender smoke',
+    label: 'working-tree smoke artifact build',
     timeoutMs: packageTimeoutMs,
   });
 }
@@ -188,7 +187,7 @@ function artifactPath(outputDir, manifest, artifactId) {
   const resolvedOutput = path.resolve(outputDir);
   const resolvedArtifact = path.resolve(outputDir, artifact.file);
   if (!isWithin(resolvedArtifact, resolvedOutput) || !existsSync(resolvedArtifact)) {
-    console.error(`[FAIL] ${artifactId} is missing or outside the packaged smoke release directory.`);
+    console.error(`[FAIL] ${artifactId} is missing or outside the packaged smoke artifact directory.`);
     return null;
   }
   return resolvedArtifact;

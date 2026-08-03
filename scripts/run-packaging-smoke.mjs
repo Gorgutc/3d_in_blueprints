@@ -21,21 +21,45 @@ export function main({
   }
 
   const packageScript = path.join(root, 'scripts', 'package_release.py');
-  const result = spawn(selected.command, [
-    ...selected.args,
-    packageScript,
-    '--smoke',
-  ], {
-    cwd: root,
-    env: {
-      ...env,
-      PYTHONDONTWRITEBYTECODE: '1',
-    },
-    stdio: 'inherit',
-    windowsHide: true,
-  });
+  let result;
+  try {
+    result = spawn(selected.command, [
+      ...selected.args,
+      packageScript,
+      '--smoke',
+    ], {
+      cwd: root,
+      env: {
+        ...env,
+        PYTHONDONTWRITEBYTECODE: '1',
+      },
+      stdio: 'inherit',
+      windowsHide: true,
+    });
+  } catch (error) {
+    logger.error(`[FAIL] Packaging smoke could not start: ${errorDetail(error)}`);
+    return 1;
+  }
 
-  return result?.status === 0 ? 0 : 1;
+  if (result?.error) {
+    logger.error(`[FAIL] Packaging smoke could not start: ${errorDetail(result.error)}`);
+    return 1;
+  }
+  if (result?.signal) {
+    logger.error(`[FAIL] Packaging smoke terminated by ${result.signal}.`);
+    return 1;
+  }
+  if (result?.status === null || result?.status === undefined) {
+    logger.error('[FAIL] Packaging smoke returned no exit status.');
+    return 1;
+  }
+  if (result.status !== 0) {
+    logger.error(
+      `[FAIL] Packaging smoke exited with status ${result.status}; see inherited child output above.`,
+    );
+    return 1;
+  }
+  return 0;
 }
 
 if (sameFilesystemPath(process.argv[1] || '', scriptPath)) {
@@ -48,4 +72,11 @@ function sameFilesystemPath(left, right) {
   return process.platform === 'win32'
     ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
     : resolvedLeft === resolvedRight;
+}
+
+function errorDetail(error) {
+  if (!error) return 'unknown error';
+  const code = typeof error.code === 'string' && error.code ? `${error.code}: ` : '';
+  const message = typeof error.message === 'string' && error.message ? error.message : String(error);
+  return `${code}${message}`;
 }

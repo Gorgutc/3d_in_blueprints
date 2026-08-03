@@ -27,13 +27,19 @@ The gate checks:
 - plugin manifest and marketplace wiring;
 - skill frontmatter and `agents/openai.yaml` files;
 - `.codex` agents, hooks, and Windows command entries;
-- active Blender add-on profile docs and dormant Windows executable profile docs;
+- dynamic profile-claim parity across root instructions, `.codex` agents/hooks,
+  plugin manifests and skills/YAML, and current agent/release docs. Canonical
+  profile owners must retain their positive claims; scan-only consumers may
+  omit duplicate claims, but every remaining or newly discovered claim must
+  keep `blender-addon=active` and `windows-exe=dormant`;
 - governance against stale source-repo rules and old pass totals;
 - exact package-script graph, CI topology, hook configuration, Lefthook/native
   parity, compatibility pointers, and frozen-decision live projections;
 - executable native-hook installer behavior in isolated temporary Git
-  repositories: import/CLI truthfulness, normal and linked worktrees, relative
-  and absolute `core.hooksPath`, exact managed and legacy ownership, full
+  repositories: the verifier imports, invokes, and executes copied CLI/core
+  bytes without installing hooks into or mutating the live checkout; it covers
+  import/CLI truthfulness, normal and linked worktrees, relative and absolute
+  `core.hooksPath`, exact managed and legacy ownership, full
   two-target preflight, parent/non-repository rejection, non-regular, hardlink,
   symlink/junction/reparse guards, hermetic system/global/env/template Git
   configuration, canonical long/8.3-equivalent confined active paths, real
@@ -81,8 +87,9 @@ The gate checks:
   output, diagnostics output registration, unsupported overlay warnings, and
   rejection of absolute overlay coordinates without explicit scale.
 - Packaging and crash hardening covered by backend crash-log diagnostics tests,
-  packaging manifest tests, and `npm run test:packaging` temporary artifact
-  smoke.
+  fail-closed full-HEAD Git-blob provenance and tree-mode mutants, packaging
+  manifest tests, process-result diagnostics, and `npm run test:packaging`
+  temporary working-tree artifact smoke.
 - Backend negative contracts in `backend/tests/test_job_contracts.py` cover
   normalized POSIX-relative source paths; POSIX/Windows rooted, drive-relative,
   UNC, traversal, backslash-relative, and non-normalized rejection; missing,

@@ -23,6 +23,7 @@ The backend is currently a stdlib-only Python package under
 Run the source checkout with a job folder. PowerShell:
 
 ```powershell
+$env:PYTHONDONTWRITEBYTECODE = "1"
 $env:PYTHONPATH = "backend/src"
 python -m blueprints_backend <job-folder>
 ```
@@ -30,7 +31,7 @@ python -m blueprints_backend <job-folder>
 POSIX shell:
 
 ```bash
-PYTHONPATH=backend/src python -m blueprints_backend <job-folder>
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend/src python -m blueprints_backend <job-folder>
 ```
 
 Replace `<job-folder>` with the path to a folder containing `job.json`. The
@@ -175,15 +176,21 @@ Run the packaging smoke:
 npm run test:packaging
 ```
 
-Create local release artifacts when needed:
+Create local release artifacts from the clean current Git `HEAD` snapshot when
+needed. The optional commit argument is an assertion that must resolve to that
+same full `HEAD` commit:
 
 ```bash
-python scripts/package_release.py --output-dir dist
+python -B scripts/package_release.py --output-dir <dir> [--commit <expected-head>]
 ```
 
-Generated release folders and zips must not be committed. This packaging does not add
-installers, code signing, Windows executable packaging, FreeCAD/TechDraw
-execution, OCCT/C++ builds, or derived DXF/PDF/DWG exports.
+The release packager reads versions and payload bytes from the verified commit,
+rejects relevant staged, unstaged, or untracked changes, and fails before
+creating the output directory when Git identity or provenance cannot be
+verified. Generated release folders and zips must not be committed. This
+packaging does not add installers, code signing, Windows executable packaging,
+FreeCAD/TechDraw execution, OCCT/C++ builds, or derived DXF/PDF/DWG exports.
+Creating these local artifacts does not approve a public release or publication.
 
 ## Runtime Contract Hardening
 
@@ -240,7 +247,9 @@ SVG source rather than a rendered viewport preview.
 ## Verification
 
 Node is used as the repository verification command harness, not as the product
-runtime.
+runtime. Tests and ad-hoc probes run through the documented `npm run` wrappers;
+the source-checkout product CLI above and the release packager are the only
+documented direct-Python entrypoints.
 
 ```bash
 npm run test:backend
@@ -259,6 +268,7 @@ auto-discovered.
 
 ## Handoff
 
-`docs/handoff/ITERATION_LOG.md` is append-only historical evidence, not a living
-status page. Add an entry after each completed or blocked iteration so a later
-session can reconstruct the verified state.
+`docs/handoff/ITERATION_LOG.md` is a closed historical ledger through P0b and is
+not a living status page. Do not backfill or append new sessions there. Current
+completed or blocked session handoffs are mandatory in the canonical Second
+Brain project `Sessions` directory.

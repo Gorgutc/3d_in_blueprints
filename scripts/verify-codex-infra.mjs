@@ -35,7 +35,7 @@ import {
   parseSmokeArguments,
   probeBlender,
   resolveBlender,
-  runReleaseArtifactBuild,
+  runSmokeArtifactBuild,
 } from './run-blender-smoke.mjs';
 import {
   NATIVE_HOOKS,
@@ -52,6 +52,7 @@ import {
   main as runPythonTestsMain,
 } from './run-python-tests.mjs';
 import { main as runPackagingSmokeMain } from './run-packaging-smoke.mjs';
+import { registerProfileParityChecks } from './verify-codex-infra/profile-parity.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, '..');
@@ -99,9 +100,11 @@ const requiredFiles = [
   'scripts/lib/js-syntax-checker.mjs',
   'scripts/lib/native-hook-installer.mjs',
   'scripts/lib/post-tool-routing.mjs',
+  'scripts/lib/profile-claim-parser.mjs',
   'scripts/lib/python-resolver.mjs',
   'scripts/verify-codex-infra.mjs',
   'scripts/verify-codex-infra/context-hooks.mjs',
+  'scripts/verify-codex-infra/profile-parity.mjs',
   'scripts/run-python-tests.mjs',
   'scripts/run-blender-smoke.mjs',
   'scripts/run-packaging-smoke.mjs',
@@ -287,6 +290,71 @@ function read(rel) {
   return readFileSync(path.join(root, rel), 'utf8');
 }
 
+function listInstructionFiles(startRel) {
+  const start = path.join(root, startRel);
+  if (!existsSync(start)) return [];
+  const stat = lstatSync(start);
+  if (stat.isFile()) return [startRel.replaceAll('\\', '/')];
+  if (!stat.isDirectory()) return [];
+  const files = [];
+  for (const entry of readdirSync(start, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const relativePath = path.join(startRel, entry.name).replaceAll('\\', '/');
+    if (entry.isDirectory()) files.push(...listInstructionFiles(relativePath));
+    if (entry.isFile()) files.push(relativePath);
+  }
+  return files;
+}
+
+function listRootMarkdownFiles() {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.md'))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function currentInstructionText(source, relativePath) {
+  if (relativePath === 'docs/agent/profiles/blender-addon.md') {
+    return source.split('## Historical Iteration Contracts')[0];
+  }
+  return source;
+}
+
+function policyProhibitionErrors(surfaces) {
+  const errors = [];
+  const rules = [
+    {
+      name: 'blanket direct-Python ban',
+      pattern: /(?:never|must not|do not)\s+(?:run|invoke|use)\s+(?:direct\s+)?`?python`?\s+(?:directly|from the source checkout)|`?python`?\s+(?:commands?\s+)?must\s+(?:always|only)\s+(?:run|be run|be invoked)\s+through\s+(?:npm|the npm)/i,
+    },
+    {
+      name: 'mandatory repository iteration ledger',
+      pattern: /(?:every|each)\s+(?:completed\s+or\s+blocked|completed|blocked)\s+iteration[^\n]{0,120}(?:must|required|append|write|add)[^\n]{0,120}ITERATION_LOG|ITERATION_LOG[^\n]{0,120}(?:must|required|append|write|add)[^\n]{0,120}(?:every|each)\s+(?:completed\s+or\s+blocked|completed|blocked)\s+iteration/i,
+    },
+  ];
+  for (const [relativePath, source] of Object.entries(surfaces)) {
+    for (const rule of rules) {
+      const flags = rule.pattern.flags.includes('g') ? rule.pattern.flags : `${rule.pattern.flags}g`;
+      for (const match of source.matchAll(new RegExp(rule.pattern.source, flags))) {
+        const sentenceStart = Math.max(
+          source.lastIndexOf('\n', match.index - 1),
+          source.lastIndexOf('.', match.index - 1),
+        ) + 1;
+        const sentenceEndMatch = /[.\n]/.exec(source.slice(match.index + match[0].length));
+        const sentenceEnd = sentenceEndMatch
+          ? match.index + match[0].length + sentenceEndMatch.index
+          : source.length;
+        const sentence = source.slice(sentenceStart, sentenceEnd);
+        if (rule.name === 'blanket direct-Python ban' && /\b(?:tests?|ad-hoc probes?)\b/i.test(sentence)) {
+          continue;
+        }
+        const line = source.slice(0, match.index).split(/\r?\n/).length;
+        errors.push(`${relativePath}:${line}: ${rule.name}`);
+      }
+    }
+  }
+  return errors;
+}
+
 function check(name, condition, detail = '') {
   checks.push({ name, condition: Boolean(condition), detail });
 }
@@ -414,69 +482,33 @@ function tomlField(body, name) {
   return match?.[1] || '';
 }
 
-function profileBlock(config, profileName) {
-  return config
-    .split(/\r?\n(?=\[\[profiles\]\])/)
-    .find((block) => new RegExp(`^name\\s*=\\s*"${profileName}"`, 'm').test(block)) || '';
-}
-
-function profileProjectionErrors({ agents, blenderDoc, config, readme, windowsDoc }) {
+function policyAlignmentErrors({ packagingDoc, qualityTooling, readme }) {
   const errors = [];
-  const currentBlenderDoc = blenderDoc.split('## Historical Iteration Contracts')[0];
-  const blenderDocStatuses = [...currentBlenderDoc.matchAll(/^Status:\s*([^\r\n]+)$/gm)].map((match) => match[1]);
-  const windowsDocStatuses = [...windowsDoc.matchAll(/^Status:\s*([^\r\n]+)$/gm)].map((match) => match[1]);
-  const blenderStatuses = [...profileBlock(config, 'blender-addon').matchAll(/^status\s*=\s*"([^"]+)"\s*$/gm)].map((match) => match[1]);
-  const windowsStatuses = [...profileBlock(config, 'windows-exe').matchAll(/^status\s*=\s*"([^"]+)"\s*$/gm)].map((match) => match[1]);
-  if (JSON.stringify(blenderStatuses) !== JSON.stringify(['active'])) errors.push('config blender-addon status differs');
-  if (JSON.stringify(windowsStatuses) !== JSON.stringify(['dormant'])) errors.push('config windows-exe status differs');
-  if (matchCount(agents, /`blender-addon` profile is active/g) !== 1 || hasProfileStateClaim(agents, 'blender-addon', 'dormant')) errors.push('AGENTS blender-addon status differs');
-  if (matchCount(agents, /`windows-exe` profile remains dormant/g) !== 1 || hasProfileStateClaim(agents, 'windows-exe', 'active')) errors.push('AGENTS windows-exe status differs');
-  if (matchCount(readme, /^- Active profile: `blender-addon`\.$/gm) !== 1 || hasProfileStateClaim(readme, 'blender-addon', 'dormant')) errors.push('README blender-addon status differs');
-  if (matchCount(readme, /^- Dormant profile: `windows-exe`\./gm) !== 1 || hasProfileStateClaim(readme, 'windows-exe', 'active')) errors.push('README windows-exe status differs');
-  if (JSON.stringify(blenderDocStatuses) !== JSON.stringify(['active.']) || hasProfileStateClaim(currentBlenderDoc, 'blender-addon', 'dormant') || hasImplicitProfileStateClaim(currentBlenderDoc, 'dormant')) errors.push('Blender profile doc status differs');
-  if (JSON.stringify(windowsDocStatuses) !== JSON.stringify(['dormant.']) || hasProfileStateClaim(windowsDoc, 'windows-exe', 'active') || hasImplicitProfileStateClaim(windowsDoc, 'active')) errors.push('Windows profile doc status differs');
+  const combined = [readme, packagingDoc, qualityTooling].join('\n');
+  if (!/\$env:PYTHONDONTWRITEBYTECODE\s*=\s*["']1["'][\s\S]{0,160}python -m blueprints_backend <job-folder>/.test(readme)) {
+    errors.push('PowerShell product CLI must disable bytecode writes');
+  }
+  if (!/PYTHONDONTWRITEBYTECODE=1\s+PYTHONPATH=backend\/src\s+python -m blueprints_backend <job-folder>/.test(readme)) {
+    errors.push('POSIX product CLI must disable bytecode writes');
+  }
+  const releaseCommand = /python -B scripts\/package_release\.py --output-dir <dir> \[--commit <expected-head>\]/;
+  if (!releaseCommand.test(readme) || !releaseCommand.test(packagingDoc)) {
+    errors.push('documented release CLI must use python -B');
+  }
+  if (!/closed historical ledger through P0b/i.test(readme) || !/Second\s+Brain[\s\S]{0,100}Sessions/i.test(readme)) {
+    errors.push('README must close the repository ledger at P0b and route current handoffs to Second Brain Sessions');
+  }
+  if (/(?:never|must not|do not)\s+(?:run|invoke|use)\s+(?:direct\s+)?Python\s+(?:directly|from the source checkout)|Python\s+must\s+only\s+be\s+(?:run|invoked)\s+through\s+(?:npm|the npm)/i.test(combined)) {
+    errors.push('blanket direct-Python ban is forbidden');
+  }
+  if (/add an entry after each completed or blocked iteration|every (?:completed|blocked) iteration[^\n]{0,80}ITERATION_LOG|ITERATION_LOG[^\n]{0,80}(?:must|required)[^\n]{0,40}(?:each|every) iteration/i.test(combined)) {
+    errors.push('mandatory repository iteration-ledger wording is forbidden');
+  }
+  if (!/imports and (?:invokes|executes) the copied CLI entrypoint[\s\S]{0,180}hermetic/i.test(qualityTooling)
+      || !/never installs hooks into or mutates the live checkout/i.test(qualityTooling)) {
+    errors.push('native-hook docs must describe copied hermetic CLI execution without live-checkout installation');
+  }
   return errors;
-}
-
-function hasProfileStateClaim(source, profileName, state) {
-  const escapedName = profileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const profilePattern = new RegExp(`(?:^|[^A-Za-z0-9_-])\`?${escapedName}\`?(?=$|[^A-Za-z0-9_-])`, 'i');
-  const statePattern = new RegExp(`\\b${state}\\b`, 'i');
-  return profileClaimUnits(source).some((unit) => (
-    profilePattern.test(unit)
-      && /\b(?:profile|status)\b/i.test(unit)
-      && statePattern.test(unit)
-  ));
-}
-
-function hasImplicitProfileStateClaim(source, state) {
-  const statePattern = new RegExp(`\\b${state}\\b`, 'i');
-  return profileClaimUnits(source).some((unit) => (
-    !hasKnownProfileId(unit)
-      && /\b(?:profile|status)\b/i.test(unit)
-      && statePattern.test(unit)
-  ));
-}
-
-function profileClaimUnits(source) {
-  return source
-    .replace(/\r?\n\s*\r?\n/g, '. ')
-    .replace(/\r?\n/g, ' ')
-    .replace(/\s+/g, ' ')
-    .split(/(?:[.!?;]+|\b(?:and|but|while|whereas)\b)/i)
-    .map((unit) => unit.trim())
-    .filter(Boolean);
-}
-
-function hasKnownProfileId(source) {
-  return ['blender-addon', 'windows-exe'].some((profileName) => {
-    const escapedName = profileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(?:^|[^A-Za-z0-9_-])\`?${escapedName}\`?(?=$|[^A-Za-z0-9_-])`, 'i').test(source);
-  });
-}
-
-function matchCount(source, pattern) {
-  return [...source.matchAll(pattern)].length;
 }
 
 function packageScriptErrors(scripts) {
@@ -1500,12 +1532,10 @@ if (exists('docs/agent/frozen-decisions.md')) {
 {
   const config = exists('.codex/config.toml') ? read('.codex/config.toml') : '';
   const profile = exists('docs/agent/profiles/blender-addon.md') ? read('docs/agent/profiles/blender-addon.md') : '';
-  const windowsProfileDoc = exists('docs/agent/profiles/windows-exe.md') ? read('docs/agent/profiles/windows-exe.md') : '';
   const activationAdr = exists('docs/agent/adrs/0003-blender-addon-backend-activation.md')
     ? read('docs/agent/adrs/0003-blender-addon-backend-activation.md')
     : '';
   const agents = exists('AGENTS.md') ? read('AGENTS.md') : '';
-  const readme = exists('README.md') ? read('README.md') : '';
   const packageConfig = exists('package.json') ? JSON.parse(read('package.json')) : {};
   const workflow = exists('.github/workflows/codex-infra.yml') ? read('.github/workflows/codex-infra.yml') : '';
   const lefthook = exists('lefthook.yml') ? read('lefthook.yml') : '';
@@ -1533,55 +1563,14 @@ if (exists('docs/agent/frozen-decisions.md')) {
       && !Object.hasOwn(packageConfig, 'devDependencies')
       && packageScriptErrors(packageConfig.scripts || {}).length === 0,
   );
-  checkFrozenLive(
-    'FD-003',
-    'profile states are exact across every live projection',
-    profileProjectionErrors({
-      agents,
-      blenderDoc: profile,
-      config,
-      readme,
-      windowsDoc: windowsProfileDoc,
-    }).length === 0,
-  );
-  const profileProjection = {
-    agents,
-    blenderDoc: profile,
-    config,
-    readme,
-    windowsDoc: windowsProfileDoc,
-  };
-  for (const [name, mutate] of [
-    ['config conflict', (value) => { value.config = value.config.replace('status = "dormant"', 'status = "dormant"\nstatus = "active"'); }],
-    ['AGENTS conflict', (value) => { value.agents += '\nThe `windows-exe` profile is active.\n'; }],
-    ['paraphrased AGENTS conflict', (value) => { value.agents += '\nProfile status for `windows-exe`: active.\n'; }],
-    ['unquoted AGENTS conflict', (value) => { value.agents += '\nProfile status for windows-exe: active.\n'; }],
-    ['wrapped AGENTS conflict', (value) => { value.agents += '\nProfile status for `windows-exe`:\nactive.\n'; }],
-    ['README conflict', (value) => { value.readme += '\n- Active profile: `windows-exe`.\n'; }],
-    ['paraphrased README conflict', (value) => { value.readme += '\nProfile status for `blender-addon`: dormant.\n'; }],
-    ['Blender profile conflict', (value) => {
-      value.blenderDoc = value.blenderDoc.replace(
-        '## Historical Iteration Contracts',
-        'Profile status: dormant.\n\n## Historical Iteration Contracts',
-      );
-    }],
-    ['Windows profile conflict', (value) => { value.windowsDoc += '\nStatus: active.\n'; }],
-  ]) {
-    const candidate = { ...profileProjection };
-    mutate(candidate);
-    check(
-      `frozen negative fixture rejects additive ${name}`,
-      profileProjectionErrors(candidate).length > 0,
-    );
-  }
-  const crossProfileProjection = {
-    ...profileProjection,
-    windowsDoc: `${windowsProfileDoc}\nThe \`blender-addon\` profile is active.\n`,
-  };
-  check(
-    'frozen positive fixture permits an explicit cross-profile state mention',
-    profileProjectionErrors(crossProfileProjection).length === 0,
-  );
+  registerProfileParityChecks({
+    check,
+    checkFrozenLive,
+    exists,
+    listFiles: listInstructionFiles,
+    listRootMarkdownFiles,
+    read,
+  });
   checkFrozenLive(
     'FD-004',
     'Blender 5.1 is enforced by add-on metadata and executable probe',
@@ -2073,12 +2062,6 @@ check(
 if (exists('.codex/config.toml')) {
   const config = read('.codex/config.toml');
   check('project app stack is selected', /app_stack\s*=\s*"blender-addon-backend"/.test(config));
-  const windowsProfile = profileBlock(config, 'windows-exe');
-  const blenderProfile = profileBlock(config, 'blender-addon');
-  check('profile block exists: windows-exe', Boolean(windowsProfile));
-  check('profile is dormant: windows-exe', /status\s*=\s*"dormant"/.test(windowsProfile));
-  check('profile block exists: blender-addon', Boolean(blenderProfile));
-  check('profile is active: blender-addon', /status\s*=\s*"active"/.test(blenderProfile));
 }
 
 if (exists('.github/workflows/codex-infra.yml')) {
@@ -2188,7 +2171,7 @@ if (exists('scripts/lib/python-resolver.mjs')) {
     'all three Python resolver consumers preserve selected launcher arguments at the task boundary',
     /spawn\(selected\.command,\s*\[\s*\.\.\.selected\.args,\s*'-m'/.test(read('scripts/run-python-tests.mjs'))
       && /spawn\(selected\.command,\s*\[\s*\.\.\.selected\.args,\s*packageScript,\s*'--smoke'/.test(read('scripts/run-packaging-smoke.mjs'))
-      && /commandRunner\(python\.command,\s*\[\s*\.\.\.python\.args,\s*packageScript,\s*'--output-dir'/.test(read('scripts/run-blender-smoke.mjs')),
+      && /commandRunner\(python\.command,\s*\[\s*\.\.\.python\.args,\s*packageScript,\s*'--smoke',\s*'--output-dir'/.test(read('scripts/run-blender-smoke.mjs')),
   );
 
   const resolverImportProbe = spawnSync(process.execPath, [
@@ -2468,10 +2451,11 @@ if (exists('scripts/lib/python-resolver.mjs')) {
 
   const packagingCalls = [];
   const packagingResolverInputs = [];
+  const packagingSuccessErrors = [];
   const packagingEnv = { PATH: 'fixture-packaging-path' };
   const packagingStatus = runPackagingSmokeMain({
     env: packagingEnv,
-    logger: { error: () => {} },
+    logger: { error: (message) => packagingSuccessErrors.push(String(message)) },
     pythonResolver: (options) => {
       packagingResolverInputs.push(options);
       return { command: 'fixture-launcher', args: ['-3'] };
@@ -2512,16 +2496,71 @@ if (exists('scripts/lib/python-resolver.mjs')) {
       && packagingCalls[0].options.env.PYTHONDONTWRITEBYTECODE === '1'
       && packagingCalls[0].options.stdio === 'inherit'
       && packagingCalls[0].options.windowsHide === true
+      && packagingSuccessErrors.length === 0
       && packagingNullStatus === 1
       && packagingNullTaskCalls === 0
       && packagingNullErrors.length === 1,
   );
 
+  const packagingOutcomeFixtures = [
+    {
+      name: 'thrown spawn',
+      expected: '[FAIL] Packaging smoke could not start: EACCES: fixture spawn throw',
+      spawn: () => {
+        throw Object.assign(new Error('fixture spawn throw'), { code: 'EACCES' });
+      },
+    },
+    {
+      name: 'result error',
+      expected: '[FAIL] Packaging smoke could not start: ENOENT: fixture result error',
+      spawn: () => ({
+        error: Object.assign(new Error('fixture result error'), { code: 'ENOENT' }),
+        signal: null,
+        status: null,
+      }),
+    },
+    {
+      name: 'signal',
+      expected: '[FAIL] Packaging smoke terminated by SIGTERM.',
+      spawn: () => ({ error: null, signal: 'SIGTERM', status: null }),
+    },
+    {
+      name: 'missing status',
+      expected: '[FAIL] Packaging smoke returned no exit status.',
+      spawn: () => ({ error: null, signal: null }),
+    },
+    {
+      name: 'null status',
+      expected: '[FAIL] Packaging smoke returned no exit status.',
+      spawn: () => ({ error: null, signal: null, status: null }),
+    },
+    {
+      name: 'nonzero status',
+      expected: '[FAIL] Packaging smoke exited with status 7; see inherited child output above.',
+      spawn: () => ({ error: null, signal: null, status: 7 }),
+    },
+  ];
+  for (const fixture of packagingOutcomeFixtures) {
+    const errors = [];
+    const status = runPackagingSmokeMain({
+      env: packagingEnv,
+      logger: { error: (message) => errors.push(String(message)) },
+      pythonResolver: () => ({ command: 'fixture-launcher', args: ['-3'] }),
+      root: resolverRoot,
+      spawn: fixture.spawn,
+    });
+    check(
+      `packaging smoke reports exactly one diagnostic for ${fixture.name}`,
+      status === 1 && JSON.stringify(errors) === JSON.stringify([fixture.expected]),
+      errors.join(' | '),
+    );
+  }
+
   const blenderBuildCalls = [];
   const blenderResolverInputs = [];
   const blenderBuildEnv = { PATH: 'fixture-blender-build-path' };
   const blenderBuildOutput = path.join(resolverRoot, 'release');
-  const blenderBuildStatus = runReleaseArtifactBuild(blenderBuildOutput, {
+  const blenderBuildStatus = runSmokeArtifactBuild(blenderBuildOutput, {
     commandRunner: (command, args, options) => {
       blenderBuildCalls.push({ args, command, options });
       return true;
@@ -2535,7 +2574,7 @@ if (exists('scripts/lib/python-resolver.mjs')) {
   });
   let blenderNullTaskCalls = 0;
   const blenderNullErrors = [];
-  const blenderNullStatus = runReleaseArtifactBuild(blenderBuildOutput, {
+  const blenderNullStatus = runSmokeArtifactBuild(blenderBuildOutput, {
     commandRunner: () => {
       blenderNullTaskCalls += 1;
       return true;
@@ -2545,7 +2584,7 @@ if (exists('scripts/lib/python-resolver.mjs')) {
     pythonResolver: () => null,
   });
   check(
-    'Blender release build forwards selected launcher args exactly and null selection starts no task process',
+    'Blender working-tree smoke build forwards selected launcher args exactly and null selection starts no task process',
     blenderBuildStatus === true
       && blenderResolverInputs.length === 1
       && blenderResolverInputs[0].env === blenderBuildEnv
@@ -2555,15 +2594,14 @@ if (exists('scripts/lib/python-resolver.mjs')) {
       && JSON.stringify(blenderBuildCalls[0].args) === JSON.stringify([
         '-3',
         path.join(root, 'scripts', 'package_release.py'),
+        '--smoke',
         '--output-dir',
         blenderBuildOutput,
-        '--commit',
-        'BLENDER-PACKAGED-SMOKE',
       ])
       && blenderBuildCalls[0].options.cwd === root
       && blenderBuildCalls[0].options.env.PATH === blenderBuildEnv.PATH
       && blenderBuildCalls[0].options.env.PYTHONDONTWRITEBYTECODE === '1'
-      && blenderBuildCalls[0].options.label === 'release artifact build for Blender smoke'
+      && blenderBuildCalls[0].options.label === 'working-tree smoke artifact build'
       && blenderBuildCalls[0].options.timeoutMs === 60_000
       && blenderNullStatus === false
       && blenderNullTaskCalls === 0
@@ -3035,9 +3073,19 @@ if (exists('scripts/package_release.py')) {
   check('package release uses stdlib zipfile', /import zipfile/.test(packageRelease) && !/pip|poetry|pyinstaller|nuitka|briefcase/i.test(packageRelease));
   check(
     'package release reads each component version from its canonical owner',
-    /package_version\s*=\s*json\.loads\([\s\S]*?package\.json/.test(packageRelease)
-      && /addon_version\s*=\s*read_bl_info_version\([\s\S]*?blueprints_addon[\s\S]*?__init__\.py/.test(packageRelease)
-      && /backend_version\s*=\s*read_backend_version\([\s\S]*?blueprints_backend[\s\S]*?__init__\.py/.test(packageRelease),
+    /package_version\s*=\s*json\.loads\(decode_source\(inventory,\s*"package\.json"\)\)/.test(packageRelease)
+      && /addon_version\s*=\s*read_bl_info_version_text\(\s*decode_source\(inventory,\s*"blender_addon\/blueprints_addon\/__init__\.py"\)/.test(packageRelease)
+      && /backend_version\s*=\s*read_backend_version_text\(\s*decode_source\(inventory,\s*"backend\/src\/blueprints_backend\/__init__\.py"\)/.test(packageRelease),
+  );
+  check(
+    'normal release is sourced from a verified full Git commit snapshot',
+    /read_release_snapshot\(expected_commit=expected_commit, root=root\)/.test(packageRelease)
+      && /"rev-parse",\s*"--verify",\s*"--end-of-options"/.test(packageRelease)
+      && /FULL_COMMIT_PATTERN\.fullmatch\(resolved\)/.test(packageRelease)
+      && /"status",\s*"--porcelain=v1",\s*"-z"/.test(packageRelease)
+      && /"ls-tree",\s*"-r",\s*"-z",\s*"--full-tree"/.test(packageRelease)
+      && /run_git\(root,\s*"cat-file",\s*"blob",\s*oid\)/.test(packageRelease)
+      && !/commit\s*=\s*["']unknown["']/.test(packageRelease),
   );
   check(
     'release manifest projects independent canonical component versions',
@@ -4399,6 +4447,92 @@ if (exists('docs/agent/profiles/blender-addon.md')) {
   check('active profile labels I1 through I8 as historical contracts', /## Historical Iteration Contracts/.test(profile));
   check('active profile keeps projection and rendered preview deferred', /projection remains deferred/i.test(profile) && /raw SVG source, not a rendered preview/i.test(profile));
   check('active profile distinguishes two-ZIP packaging from dormant Windows EXE tooling', /two separate ZIPs/i.test(profile) && /Windows EXE, installer, and signing toolchain remains dormant/i.test(profile));
+}
+
+if (exists('README.md') && exists('docs/release/packaging.md') && exists('docs/agent/quality-tooling.md')) {
+  const policyProjection = {
+    packagingDoc: read('docs/release/packaging.md'),
+    qualityTooling: read('docs/agent/quality-tooling.md'),
+    readme: read('README.md'),
+  };
+  const policyErrors = policyAlignmentErrors(policyProjection);
+  check('documented Python, handoff, and hermetic-hook policies are aligned', policyErrors.length === 0, policyErrors.join('; '));
+  for (const [name, mutate] of [
+    ['blanket direct-Python ban', (value) => { value.readme += '\nNever run Python directly from the source checkout.\n'; }],
+    ['mandatory repository ledger', (value) => { value.readme += '\nAdd an entry after each completed or blocked iteration.\n'; }],
+    ['release command without -B', (value) => { value.packagingDoc = value.packagingDoc.replace('python -B scripts/package_release.py', 'python scripts/package_release.py'); }],
+    ['live CLI exclusion wording', (value) => { value.qualityTooling = value.qualityTooling.replace('imports and invokes the copied CLI entrypoint', 'never imports or executes the live CLI entrypoint'); }],
+  ]) {
+    const candidate = { ...policyProjection };
+    mutate(candidate);
+    check(`policy negative fixture rejects ${name}`, policyAlignmentErrors(candidate).length > 0);
+  }
+
+  const policyPaths = [
+    'AGENTS.md',
+    'CLAUDE.md',
+    'GEMINI.md',
+    'README.md',
+    'DO_NOT_PUSH.md',
+    '.codex/config.toml',
+    '.codex/hooks.json',
+    ...listInstructionFiles('.agents/plugins'),
+    ...listInstructionFiles('.codex/agents'),
+    ...listInstructionFiles('.codex/hooks'),
+    ...listInstructionFiles('plugins/blueprints-codex'),
+    ...listInstructionFiles('docs/agent').filter((relativePath) => (
+      !relativePath.startsWith('docs/agent/adrs/')
+      && relativePath !== 'docs/agent/migration-inventory.md'
+    )),
+    ...listInstructionFiles('docs/release'),
+  ].filter(exists).sort((a, b) => a.localeCompare(b));
+  const policySurfaces = Object.fromEntries(policyPaths.map((relativePath) => [
+    relativePath,
+    currentInstructionText(read(relativePath), relativePath),
+  ]));
+  const prohibitionErrors = policyProhibitionErrors(policySurfaces);
+  check(
+    'every active instruction surface rejects blanket Python and mandatory repository-ledger policy',
+    prohibitionErrors.length === 0,
+    prohibitionErrors.join('; '),
+  );
+  for (const [name, relativePath, addition] of [
+    ['Markdown direct-Python ban', 'AGENTS.md', 'Never invoke `python` directly.'],
+    [
+      'path-specific repository-ledger mandate',
+      'docs/agent/verification.md',
+      'Every completed or blocked iteration must be appended to docs/handoff/ITERATION_LOG.md.',
+    ],
+  ]) {
+    const candidate = { ...policySurfaces, [relativePath]: `${policySurfaces[relativePath]}\n${addition}\n` };
+    const errors = policyProhibitionErrors(candidate);
+    check(
+      `active-policy negative fixture rejects ${name}`,
+      errors.some((error) => error.startsWith(`${relativePath}:`)),
+      errors.join('; '),
+    );
+  }
+  check(
+    'active-policy positive fixture permits explicit repository-ledger closure wording',
+    policyProhibitionErrors({
+      'README.md': 'The repository ledger is closed through P0b. Do not backfill or append new sessions there.',
+    }).length === 0,
+  );
+  check(
+    'active-policy positive fixture permits test-scoped direct-Python restrictions',
+    policyProhibitionErrors({
+      'docs/agent/testing.md': 'Tests and ad-hoc probes must not invoke `python` directly; use npm runners.',
+    }).length === 0,
+  );
+  check(
+    'active-policy mixed fixture still rejects a later blanket direct-Python ban',
+    policyProhibitionErrors({
+      'docs/agent/testing.md': [
+        'Tests and ad-hoc probes must not invoke `python` directly; use npm runners.',
+        'Never invoke `python` directly.',
+      ].join('\n'),
+    }).some((error) => error.startsWith('docs/agent/testing.md:2:')),
+  );
 }
 
 if (exists('README.md')) {
