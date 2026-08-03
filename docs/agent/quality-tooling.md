@@ -69,8 +69,10 @@ hooks do not import their expected text from the verifier.
 
 The ordered contract is exactly `pre-commit -> npm run quality:fast` followed
 by `pre-push -> npm run codex:ship`. The CLI name remains `hooks:install`; the
-import-safe core lives in `scripts/lib/native-hook-installer.mjs`, so tests
-never need to import or execute the live CLI entrypoint.
+import-safe core lives in `scripts/lib/native-hook-installer.mjs`. Verification
+imports and invokes the copied CLI entrypoint and copied core only inside
+hermetic temporary Git fixtures, including a child-process CLI boundary. It
+never installs hooks into or mutates the live checkout.
 
 The installer first proves that `git rev-parse --show-toplevel` matches its
 intended repository root. Git remains the active-path authority through
@@ -115,7 +117,7 @@ and empty inventories are also controlled failures. The separate
 `smoke_blender_*.py` scripts belong to `test:blender` and are deliberately not
 part of this `test:backend` module contract.
 Non-`test_*.py` fixtures and the standalone `npm run test:packaging` release
-smoke are also outside the inventory; `backend/tests/test_packaging.py` remains
+layout smoke are also outside the inventory; `backend/tests/test_packaging.py` remains
 an allowlisted `test:backend` module and covers different behavior.
 
 Infra verification imports the production inspector and runner without CLI
@@ -157,8 +159,8 @@ interpreter used to build the isolated two-ZIP Blender smoke artifacts.
   `--if-available` may defer only when every auto-discovery route is genuinely
   missing. Wrong-version, unlaunchable, or unreadable auto-discovery results
   remain failures unless a later valid Blender 5.1 candidate succeeds.
-- `test:packaging`: stdlib packaging smoke that writes generated release
-  artifacts only to a temporary directory.
+- `test:packaging`: stdlib working-tree packaging smoke that writes generated
+  smoke artifacts only to a temporary directory.
 - `quality:deep`: `quality:fast` plus backend, bridge unit, and packaging
   smoke tests.
 - `codex:ship`: required final local gate before commit, push, PR, or delivery.
